@@ -486,10 +486,7 @@ export default function Home() {
             <section className="recovery-panel">
               <div>
                 <strong>商品信息获取不完整，需要补充后再生成正式分析</strong>
-                <p>
-                  当前只获取到少量商品事实，因此系统不会把推测内容包装成确定结论。你可以从商品页复制标题、价格、五点描述、规格或图片链接；补充后会再次交给 AI
-                  基于这些事实重新分析，并继续做夸大、虚构和字段缺失检查。
-                </p>
+                <p>当前只获取到少量商品信息，你可以从商品页复制标题、价格、五点描述、规格或图片链接，补充后会结合初始信息重新分析。</p>
               </div>
               <button type="button" onClick={openManualFromWarning}>
                 打开人工补充
