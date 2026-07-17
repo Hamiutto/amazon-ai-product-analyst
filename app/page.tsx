@@ -184,6 +184,7 @@ export default function Home() {
   useEffect(() => {
     setManualDraft({});
     setManualCurrency("auto");
+    setShowManual(false);
     setCopiedKey("");
     setData(null);
   }, [url]);
