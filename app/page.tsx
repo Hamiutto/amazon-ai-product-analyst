@@ -73,6 +73,10 @@ function composeManualPrice(amount?: string, currency = "auto") {
   return currency === "auto" ? parsed.amount || trimmed : `${currency}${parsed.amount || trimmed}`;
 }
 
+function hasManualInput(manual: ManualProductInput) {
+  return Object.values(manual).some((value) => Boolean(value?.trim()));
+}
+
 function StatusPill({ status }: { status?: string }) {
   const label =
     status === "complete"
@@ -178,6 +182,13 @@ export default function Home() {
   }, [data]);
 
   useEffect(() => {
+    setManualDraft({});
+    setManualCurrency("auto");
+    setCopiedKey("");
+    setData(null);
+  }, [url]);
+
+  useEffect(() => {
     if (!showManual || !data) return;
 
     setManualDraft((current) => {
@@ -217,20 +228,23 @@ export default function Home() {
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    const manualOverride = showManual
-      ? {
-          ...manualDraft,
-          price: composeManualPrice(manualDraft.price, manualCurrency)
-        }
-      : undefined;
+    const manualOverride = buildManualOverride();
     await runAnalysis(manualOverride);
   }
 
   async function confirmManual() {
-    await runAnalysis({
+    await runAnalysis(buildManualOverride());
+  }
+
+  function buildManualOverride() {
+    if (!showManual) return undefined;
+
+    const manualOverride = {
       ...manualDraft,
       price: composeManualPrice(manualDraft.price, manualCurrency)
-    });
+    };
+
+    return hasManualInput(manualOverride) ? manualOverride : undefined;
   }
 
   const displayPrice = data?.result.productInfo.price || "未提供";
