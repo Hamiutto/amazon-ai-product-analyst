@@ -91,6 +91,76 @@ function extractPrice(html: string) {
   );
 }
 
+function safeJsonParse(value: string) {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return undefined;
+  }
+}
+
+function walkJson(value: unknown, visit: (item: Record<string, unknown>) => void) {
+  if (!value || typeof value !== "object") return;
+
+  if (Array.isArray(value)) {
+    value.forEach((item) => walkJson(item, visit));
+    return;
+  }
+
+  const record = value as Record<string, unknown>;
+  visit(record);
+  Object.values(record).forEach((item) => walkJson(item, visit));
+}
+
+function extractJsonLd(html: string) {
+  const data: {
+    title?: string;
+    price?: string;
+    imageUrl?: string;
+    description?: string;
+    rating?: string;
+    reviewCount?: string;
+  } = {};
+
+  for (const match of html.matchAll(/<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)) {
+    const parsed = safeJsonParse(decodeEntities(match[1].trim()));
+    walkJson(parsed, (item) => {
+      const type = String(item["@type"] || "").toLowerCase();
+      if (type && !type.includes("product") && !item.offers && !item.aggregateRating) return;
+
+      if (!data.title && typeof item.name === "string") data.title = decodeEntities(item.name);
+      if (!data.description && typeof item.description === "string") data.description = decodeEntities(item.description);
+      if (!data.imageUrl) {
+        if (typeof item.image === "string") data.imageUrl = item.image;
+        if (Array.isArray(item.image) && typeof item.image[0] === "string") data.imageUrl = item.image[0];
+      }
+
+      const offers = item.offers as Record<string, unknown> | undefined;
+      if (!data.price && offers) {
+        const price = typeof offers.price === "string" || typeof offers.price === "number" ? String(offers.price) : "";
+        const currency = typeof offers.priceCurrency === "string" ? offers.priceCurrency : "";
+        data.price = price ? `${currency ? `${currency} ` : ""}${price}` : undefined;
+      }
+
+      const rating = item.aggregateRating as Record<string, unknown> | undefined;
+      if (rating) {
+        if (!data.rating && rating.ratingValue) data.rating = `${rating.ratingValue} out of 5 stars`;
+        if (!data.reviewCount && rating.reviewCount) data.reviewCount = `${rating.reviewCount} ratings`;
+      }
+    });
+  }
+
+  return data;
+}
+
+function extractInlineJsonValue(html: string, keys: string[]) {
+  for (const key of keys) {
+    const match = html.match(new RegExp(`"${key}"\\s*:\\s*"([^"]+)"`, "i"));
+    if (match?.[1]) return decodeEntities(match[1].replace(/\\\//g, "/"));
+  }
+  return "";
+}
+
 function uniqueList(values: string[]) {
   return Array.from(new Set(values.map((item) => decodeEntities(stripHtml(item))).filter(Boolean))).slice(0, 8);
 }
@@ -122,6 +192,23 @@ function extractUrlKeywords(url: string) {
   } catch {
     return "";
   }
+}
+
+function candidateUrls(url: string) {
+  const urls = [url];
+  const asin = extractAsin(url);
+
+  try {
+    const parsed = new URL(url);
+    if (asin) {
+      urls.push(`${parsed.protocol}//${parsed.hostname}/dp/${asin}`);
+      urls.push(`${parsed.protocol}//${parsed.hostname}/gp/product/${asin}`);
+    }
+  } catch {
+    return urls;
+  }
+
+  return Array.from(new Set(urls));
 }
 
 function manualToFacts(url: string, manual: ManualProductInput, sourceStatus: ProductFacts["sourceStatus"]): ProductFacts {
@@ -198,6 +285,147 @@ function mergeManual(base: ProductFacts, manual?: ManualProductInput): ProductFa
   };
 }
 
+async function fetchAmazonHtml(url: string) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 9000);
+  try {
+    const response = await fetch(url, {
+      signal: controller.signal,
+      redirect: "follow",
+      headers: {
+        accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "accept-language": "en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7",
+        "cache-control": "no-cache",
+        pragma: "no-cache",
+        "upgrade-insecure-requests": "1",
+        "user-agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36"
+      }
+    });
+
+    return {
+      ok: response.ok,
+      status: response.status,
+      html: response.ok ? await response.text() : ""
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function scoreFacts(facts: ProductFacts) {
+  return [
+    facts.title,
+    facts.price,
+    facts.imageUrl,
+    facts.features.length,
+    Object.keys(facts.specs).length,
+    facts.description,
+    facts.rating,
+    facts.reviewCount
+  ].filter(Boolean).length;
+}
+
+function parseAmazonHtml(url: string, html: string, fallback: ProductFacts) {
+    const jsonLd = extractJsonLd(html);
+    const title = matchFirst(html, [
+      /id=["']productTitle["'][^>]*>([\s\S]*?)<\/span>/i,
+      /<meta\s+property=["']og:title["']\s+content=["']([^"']+)["']/i,
+      /<meta\s+name=["']title["']\s+content=["']([^"']+)["']/i,
+      /<title>([\s\S]*?)<\/title>/i,
+      /data-automation-id=["']title["'][^>]*>([\s\S]*?)<\/span>/i
+    ]);
+    const price = extractPrice(html);
+    const rating = matchFirst(html, [
+      /data-hook=["']rating-out-of-text["'][^>]*>([\s\S]*?)<\/span>/i,
+      /class=["'][^"']*a-icon-alt[^"']*["'][^>]*>([^<]*out of 5 stars[^<]*)<\/span>/i
+    ]);
+    const reviewCount = matchFirst(html, [
+      /id=["']acrCustomerReviewText["'][^>]*>([\s\S]*?)<\/span>/i,
+      /data-hook=["']total-review-count["'][^>]*>([\s\S]*?)<\/span>/i
+    ]);
+    const imageUrl = matchFirst(html, [
+      /<meta\s+property=["']og:image["']\s+content=["']([^"']+)["']/i,
+      /<meta\s+name=["']twitter:image["']\s+content=["']([^"']+)["']/i,
+      /data-old-hires=["']([^"']+)["']/i,
+      /"large":"([^"]+)"/i
+    ]).replace(/\\\//g, "/") || extractInlineJsonValue(html, ["hiRes", "large", "mainUrl"]);
+    const description = matchFirst(html, [
+      /<meta\s+name=["']description["']\s+content=["']([^"']+)["']/i,
+      /<meta\s+property=["']og:description["']\s+content=["']([^"']+)["']/i,
+      /id=["']productDescription["'][\s\S]*?<p[^>]*>([\s\S]*?)<\/p>/i
+    ]);
+    const category = matchFirst(html, [
+      /id=["']wayfinding-breadcrumbs_feature_div["'][\s\S]*?<a[^>]*>([\s\S]*?)<\/a>/i,
+      /<a[^>]+class=["'][^"']*a-link-normal a-color-tertiary[^"']*["'][^>]*>([\s\S]*?)<\/a>/i
+    ]);
+
+    const featureBlock = html.match(/id=["']feature-bullets["'][\s\S]*?<ul[^>]*>([\s\S]*?)<\/ul>/i)?.[1] || "";
+    const aplusBlock = html.match(/id=["']aplus["'][\s\S]*?(?:id=["']important-information["']|<\/body>)/i)?.[0] || "";
+    const features = uniqueList([
+      ...Array.from(featureBlock.matchAll(/<li[^>]*>([\s\S]*?)<\/li>/gi)).map((match) => match[1]),
+      ...Array.from(aplusBlock.matchAll(/<p[^>]*>([\s\S]{20,260}?)<\/p>/gi)).map((match) => match[1])
+    ]);
+
+    const specs: Record<string, string> = {};
+    for (const row of html.matchAll(/<tr[^>]*>\s*<t[dh][^>]*>([\s\S]*?)<\/t[dh]>\s*<t[dh][^>]*>([\s\S]*?)<\/t[dh]>\s*<\/tr>/gi)) {
+      const key = decodeEntities(stripHtml(row[1]));
+      const value = decodeEntities(stripHtml(row[2]));
+      if (key && value && Object.keys(specs).length < 8) specs[key] = value;
+    }
+
+    const finalTitle = title || jsonLd.title || extractUrlKeywords(url);
+    const finalCategory = category || fallback.category || "";
+    const finalPrice = price || jsonLd.price || "";
+    const finalRating = rating || jsonLd.rating || "";
+    const finalReviewCount = reviewCount || jsonLd.reviewCount || "";
+    const finalImageUrl = imageUrl || jsonLd.imageUrl || "";
+    const finalDescription = description || jsonLd.description || "";
+
+    const sourceFields = [
+      finalTitle && (title ? "页面标题" : jsonLd.title ? "结构化标题" : "链接标题"),
+      finalCategory && "页面品类",
+      finalPrice && (price ? "页面价格" : "结构化价格"),
+      finalRating && (rating ? "页面评分" : "结构化评分"),
+      finalReviewCount && (reviewCount ? "页面评论数" : "结构化评论数"),
+      finalImageUrl && (imageUrl ? "页面图片" : "结构化图片"),
+      features.length && "页面五点描述",
+      Object.keys(specs).length && "页面规格",
+      finalDescription && (description ? "页面描述" : "结构化描述")
+    ].filter(Boolean) as string[];
+
+    const missingFields = [
+      !finalTitle && "商品名称",
+      !finalPrice && "价格",
+      !features.length && "核心功能",
+      !Object.keys(specs).length && "规格参数",
+      !finalImageUrl && "商品图片"
+    ].filter(Boolean) as string[];
+
+    const facts: ProductFacts = {
+      url,
+      asin: extractAsin(url),
+      title: finalTitle || undefined,
+      category: finalCategory || undefined,
+      price: finalPrice || undefined,
+      rating: finalRating || undefined,
+      reviewCount: finalReviewCount || undefined,
+      imageUrl: finalImageUrl || undefined,
+      features,
+      specs,
+      description: finalDescription || undefined,
+      sourceStatus: sourceFields.length >= 5 ? "complete" : "partial",
+      sourceSummary:
+        sourceFields.length >= 5
+          ? "已从 Amazon 页面提取主要商品信息。"
+          : "Amazon 页面可获取字段有限，系统将进行保守分析，并建议补充商品信息。",
+      sourceFields,
+      missingFields
+    };
+
+    return facts;
+}
+
 export async function extractAmazonFacts(url: string, manual?: ManualProductInput): Promise<ProductFacts> {
   const fallback = manualToFacts(url, manual || {}, manual ? "manual" : "failed");
 
@@ -220,112 +448,42 @@ export async function extractAmazonFacts(url: string, manual?: ManualProductInpu
     };
   }
 
-  try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 9000);
-    const response = await fetch(url, {
-      signal: controller.signal,
-      headers: {
-        "accept-language": "en-US,en;q=0.9",
-        "cache-control": "no-cache",
-        "user-agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36"
+  let bestFacts: ProductFacts | undefined;
+  let lastStatus = 0;
+
+  for (const candidate of candidateUrls(url)) {
+    try {
+      const response = await fetchAmazonHtml(candidate);
+      lastStatus = response.status;
+      if (!response.ok || !response.html) continue;
+
+      const facts = parseAmazonHtml(url, response.html, fallback);
+      if (!bestFacts || scoreFacts(facts) > scoreFacts(bestFacts)) {
+        bestFacts = facts;
       }
-    });
-    clearTimeout(timer);
-
-    if (!response.ok) {
-      return mergeManual(
-        {
-          ...fallback,
-          sourceStatus: manual ? "manual" : "partial",
-          sourceSummary: `Amazon 页面返回 ${response.status}，已启用降级分析。`
-        },
-        manual
-      );
+      if (scoreFacts(facts) >= 5) break;
+    } catch {
+      continue;
     }
+  }
 
-    const html = await response.text();
-    const title = matchFirst(html, [
-      /id=["']productTitle["'][^>]*>([\s\S]*?)<\/span>/i,
-      /<meta\s+property=["']og:title["']\s+content=["']([^"']+)["']/i,
-      /<title>([\s\S]*?)<\/title>/i
-    ]);
-    const price = extractPrice(html);
-    const rating = matchFirst(html, [
-      /data-hook=["']rating-out-of-text["'][^>]*>([\s\S]*?)<\/span>/i,
-      /class=["'][^"']*a-icon-alt[^"']*["'][^>]*>([^<]*out of 5 stars[^<]*)<\/span>/i
-    ]);
-    const reviewCount = matchFirst(html, [
-      /id=["']acrCustomerReviewText["'][^>]*>([\s\S]*?)<\/span>/i,
-      /data-hook=["']total-review-count["'][^>]*>([\s\S]*?)<\/span>/i
-    ]);
-    const imageUrl = matchFirst(html, [
-      /<meta\s+property=["']og:image["']\s+content=["']([^"']+)["']/i,
-      /data-old-hires=["']([^"']+)["']/i,
-      /"large":"([^"]+)"/i
-    ]).replace(/\\\//g, "/");
-    const description = matchFirst(html, [
-      /<meta\s+name=["']description["']\s+content=["']([^"']+)["']/i,
-      /id=["']productDescription["'][\s\S]*?<p[^>]*>([\s\S]*?)<\/p>/i
-    ]);
-    const category = matchFirst(html, [
-      /id=["']wayfinding-breadcrumbs_feature_div["'][\s\S]*?<a[^>]*>([\s\S]*?)<\/a>/i,
-      /<a[^>]+class=["'][^"']*a-link-normal a-color-tertiary[^"']*["'][^>]*>([\s\S]*?)<\/a>/i
-    ]);
+  if (bestFacts) {
+    return mergeManual(bestFacts, manual);
+  }
 
-    const featureBlock = html.match(/id=["']feature-bullets["'][\s\S]*?<ul[^>]*>([\s\S]*?)<\/ul>/i)?.[1] || "";
-    const features = uniqueList(Array.from(featureBlock.matchAll(/<li[^>]*>([\s\S]*?)<\/li>/gi)).map((match) => match[1]));
+  if (lastStatus) {
+    return mergeManual(
+      {
+        ...fallback,
+        sourceStatus: manual ? "manual" : "partial",
+        sourceSummary: `Amazon 页面返回 ${lastStatus}，已启用降级分析。`
+      },
+      manual
+    );
+  }
 
-    const specs: Record<string, string> = {};
-    for (const row of html.matchAll(/<tr[^>]*>\s*<t[dh][^>]*>([\s\S]*?)<\/t[dh]>\s*<t[dh][^>]*>([\s\S]*?)<\/t[dh]>\s*<\/tr>/gi)) {
-      const key = decodeEntities(stripHtml(row[1]));
-      const value = decodeEntities(stripHtml(row[2]));
-      if (key && value && Object.keys(specs).length < 8) specs[key] = value;
-    }
-
-    const sourceFields = [
-      title && "页面标题",
-      category && "页面品类",
-      price && "页面价格",
-      rating && "页面评分",
-      reviewCount && "页面评论数",
-      imageUrl && "页面图片",
-      features.length && "页面五点描述",
-      Object.keys(specs).length && "页面规格",
-      description && "页面描述"
-    ].filter(Boolean) as string[];
-
-    const missingFields = [
-      !title && "商品名称",
-      !price && "价格",
-      !features.length && "核心功能",
-      !Object.keys(specs).length && "规格参数",
-      !imageUrl && "商品图片"
-    ].filter(Boolean) as string[];
-
-    const facts: ProductFacts = {
-      url,
-      asin: extractAsin(url),
-      title: title || extractUrlKeywords(url) || undefined,
-      category: category || undefined,
-      price: price || undefined,
-      rating: rating || undefined,
-      reviewCount: reviewCount || undefined,
-      imageUrl: imageUrl || undefined,
-      features,
-      specs,
-      description: description || undefined,
-      sourceStatus: sourceFields.length >= 5 ? "complete" : "partial",
-      sourceSummary:
-        sourceFields.length >= 5
-          ? "已从 Amazon 页面提取主要商品信息。"
-          : "Amazon 页面可获取字段有限，系统将进行保守分析，并建议补充商品信息。",
-      sourceFields,
-      missingFields
-    };
-
-    return mergeManual(facts, manual);
+  try {
+    return mergeManual(fallback, manual);
   } catch {
     return mergeManual(
       {
