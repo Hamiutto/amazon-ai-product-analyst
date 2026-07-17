@@ -67,6 +67,36 @@ function chineseLength(value: string) {
   return Array.from(value.replace(/\s+/g, "")).length;
 }
 
+function chineseRatio(value: string) {
+  const text = value.replace(/\s+/g, "");
+  if (!text) return 1;
+
+  const chineseChars = Array.from(text).filter((char) => /[\u4e00-\u9fff]/.test(char)).length;
+  const latinWords = text.match(/[A-Za-z]{3,}/g)?.length || 0;
+  return chineseChars / Math.max(chineseChars + latinWords, 1);
+}
+
+function resultText(value: ProductAnalysisResult) {
+  return [
+    value.productInfo?.category,
+    value.productInfo?.coreFunctions?.join(" "),
+    value.productInfo?.specs?.join(" "),
+    value.analysis?.targetUsers?.join(" "),
+    value.analysis?.scenarios?.join(" "),
+    value.analysis?.painPoints?.join(" "),
+    value.analysis?.sellingPoints?.join(" "),
+    value.analysis?.contentAngles?.join(" "),
+    value.analysis?.purchaseDrivers?.join(" "),
+    value.script?.hook,
+    value.script?.fullText,
+    value.script?.sceneSuggestion,
+    value.quality?.riskWarnings?.join(" "),
+    value.trust?.summary
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
 function deterministicChecks(result: ProductAnalysisResult, facts: ProductFacts): QualityCheck[] {
   const text = result.script.fullText || "";
   const riskyWords = ["最", "第一", "100%", "永久", "治愈", "保证", "必买", "全网"];
@@ -177,7 +207,8 @@ export async function analyzeWithDeepSeek(facts: ProductFacts) {
 2. 如果是合理推断，请放到 inferredParts 或分析维度里，不要当作商品事实。
 3. 口播文案必须 150 个中文字以内，前 5 秒要有吸引继续观看的钩子，适合真实短视频带货场景。
 4. 产品分析要体现业务理解，不要只复述标题；必须覆盖目标用户、使用场景、用户痛点、核心卖点、内容切入角度、购买决策点。
-5. 返回 JSON，不要 Markdown，不要解释。
+5. 除商品原始品牌名、型号、ASIN、URL、规格单位外，所有解释性内容、分析内容、质量检查内容和口播文案必须使用简体中文。
+6. 返回 JSON，不要 Markdown，不要解释。
 
 商品事实：
 ${JSON.stringify(facts, null, 2)}
@@ -230,7 +261,7 @@ JSON 结构：
         messages: [
           {
             role: "system",
-            content: "你擅长把跨境电商商品信息拆解成可落地的内容生产方案。输出必须是严格 JSON。"
+            content: "你擅长把跨境电商商品信息拆解成可落地的中文内容生产方案。输出必须是严格 JSON，除品牌名、型号和规格单位外，所有字段内容必须使用简体中文。"
           },
           {
             role: "user",
@@ -262,7 +293,36 @@ JSON 结构：
   try {
     const data = await response.json();
     const content = data?.choices?.[0]?.message?.content || "{}";
-    const parsed = extractJson(content) as ProductAnalysisResult;
+    let parsed = extractJson(content) as ProductAnalysisResult;
+    if (chineseRatio(resultText(parsed)) < 0.35) {
+      const repairResponse = await fetch(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            {
+              role: "system",
+              content: "把输入 JSON 中除品牌名、型号、ASIN、URL、规格单位以外的所有英文内容改写为自然简体中文。保持相同 JSON 结构，不要 Markdown。"
+            },
+            {
+              role: "user",
+              content: JSON.stringify(parsed)
+            }
+          ],
+          temperature: 0.2,
+          response_format: { type: "json_object" }
+        })
+      });
+
+      if (repairResponse.ok) {
+        const repairData = await repairResponse.json();
+        parsed = extractJson(repairData?.choices?.[0]?.message?.content || "{}") as ProductAnalysisResult;
+      }
+    }
 
     return {
       result: normalizeResult(parsed, facts),
