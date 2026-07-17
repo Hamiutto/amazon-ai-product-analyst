@@ -4,7 +4,9 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   BadgeCheck,
+  Check,
   ClipboardCheck,
+  Copy,
   FileSearch,
   ImageIcon,
   LinkIcon,
@@ -24,6 +26,7 @@ const currencyOptions = [
   { value: "auto", label: "自动识别" },
   { value: "S$", label: "新加坡币 S$" },
   { value: "$", label: "美元 $" },
+  { value: "US$", label: "美元 US$" },
   { value: "HK$", label: "港币 HK$" },
   { value: "€", label: "欧元 €" },
   { value: "£", label: "英镑 £" },
@@ -55,7 +58,7 @@ function splitPriceParts(price?: string) {
   }
 
   return {
-    currency: (match[1] || "auto").toUpperCase(),
+    currency: match[1] ? match[1].toUpperCase() : "auto",
     amount: match[2]
   };
 }
@@ -87,12 +90,18 @@ function Section({
   title,
   icon,
   children,
-  aside
+  aside,
+  copyText,
+  copied,
+  onCopy
 }: {
   title: string;
   icon: React.ReactNode;
   children: React.ReactNode;
   aside?: React.ReactNode;
+  copyText?: string;
+  copied?: boolean;
+  onCopy?: (text: string) => void;
 }) {
   return (
     <section className="panel">
@@ -101,7 +110,15 @@ function Section({
           {icon}
           <h2>{title}</h2>
         </div>
-        {aside}
+        <div className="section-actions">
+          {aside}
+          {copyText && onCopy && (
+            <button className="copy-button" type="button" onClick={() => onCopy(copyText)}>
+              {copied ? <Check size={15} /> : <Copy size={15} />}
+              {copied ? "已复制" : "复制"}
+            </button>
+          )}
+        </div>
       </div>
       {children}
     </section>
@@ -153,6 +170,7 @@ export default function Home() {
   const [data, setData] = useState<AnalyzeResponse | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [copiedKey, setCopiedKey] = useState("");
 
   const scriptCount = useMemo(() => {
     const text = data?.result.script.fullText || "";
@@ -216,6 +234,87 @@ export default function Home() {
   }
 
   const displayPrice = data?.result.productInfo.price || "未提供";
+  const productSummaryText = data
+    ? [
+        `商品名称：${data.result.productInfo.name}`,
+        `ASIN：${data.facts.asin || "未识别"}`,
+        `品类：${data.result.productInfo.category}`,
+        `价格：${displayPrice}`,
+        `链接：${data.facts.url}`
+      ].join("\n")
+    : "";
+  const productInfoText = data
+    ? [
+        "产品信息整理",
+        `名称：${data.result.productInfo.name}`,
+        `品类：${data.result.productInfo.category}`,
+        `价格：${displayPrice}`,
+        "",
+        "核心功能：",
+        ...data.result.productInfo.coreFunctions.map((item) => `- ${item}`),
+        "",
+        "规格参数：",
+        ...(data.result.productInfo.specs.length ? data.result.productInfo.specs.map((item) => `- ${item}`) : ["- 暂无"])
+      ].join("\n")
+    : "";
+  const trustText = data
+    ? [
+        "信息来源与可信度",
+        `可信度：${data.result.trust.level.toUpperCase()}`,
+        data.result.trust.summary,
+        "",
+        "已获取字段：",
+        ...(data.facts.sourceFields.length ? data.facts.sourceFields.map((item) => `- ${item}`) : ["- 暂无"]),
+        "",
+        "建议核对字段：",
+        ...(data.facts.missingFields.length ? data.facts.missingFields.map((item) => `- ${item}`) : ["- 暂无"])
+      ].join("\n")
+    : "";
+  const analysisText = data
+    ? [
+        "产品分析",
+        "",
+        "目标用户：",
+        ...data.result.analysis.targetUsers.map((item) => `- ${item}`),
+        "",
+        "使用场景：",
+        ...data.result.analysis.scenarios.map((item) => `- ${item}`),
+        "",
+        "用户痛点：",
+        ...data.result.analysis.painPoints.map((item) => `- ${item}`),
+        "",
+        "核心卖点：",
+        ...data.result.analysis.sellingPoints.map((item) => `- ${item}`),
+        "",
+        "内容切入角度：",
+        ...data.result.analysis.contentAngles.map((item) => `- ${item}`),
+        "",
+        "购买决策点：",
+        ...data.result.analysis.purchaseDrivers.map((item) => `- ${item}`)
+      ].join("\n")
+    : "";
+  const scriptText = data
+    ? ["短视频口播文案", `钩子：${data.result.script.hook}`, "", data.result.script.fullText, "", `拍摄建议：${data.result.script.sceneSuggestion}`].join("\n")
+    : "";
+  const qualityText = data
+    ? [
+        "质量检查",
+        ...data.result.quality.checks.map((check) => `- ${check.label}：${check.detail}`),
+        "",
+        "风险提示：",
+        ...(data.result.quality.riskWarnings.length ? data.result.quality.riskWarnings.map((item) => `- ${item}`) : ["- 暂无"])
+      ].join("\n")
+    : "";
+
+  async function copySection(key: string, text: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedKey(key);
+      window.setTimeout(() => setCopiedKey(""), 1400);
+    } catch {
+      setError("复制失败，请手动选择文本复制。");
+    }
+  }
 
   return (
     <main className="workspace">
@@ -362,7 +461,13 @@ export default function Home() {
             <div className="product-main">
               <div className="product-heading">
                 <h2>{data.result.productInfo.name}</h2>
-                <StatusPill status={data.facts.sourceStatus} />
+                <div className="product-actions">
+                  <StatusPill status={data.facts.sourceStatus} />
+                  <button className="copy-button" type="button" onClick={() => copySection("summary", productSummaryText)}>
+                    {copiedKey === "summary" ? <Check size={15} /> : <Copy size={15} />}
+                    {copiedKey === "summary" ? "已复制" : "复制概览"}
+                  </button>
+                </div>
               </div>
               <div className="meta-grid">
                 <span>ASIN: {data.facts.asin || "未识别"}</span>
@@ -374,7 +479,14 @@ export default function Home() {
           </section>
 
           <div className="grid-two">
-            <Section title="产品信息整理" icon={<ClipboardCheck size={20} />} aside={<StatusPill status={data.facts.sourceStatus} />}>
+            <Section
+              title="产品信息整理"
+              icon={<ClipboardCheck size={20} />}
+              aside={<StatusPill status={data.facts.sourceStatus} />}
+              copyText={productInfoText}
+              copied={copiedKey === "product"}
+              onCopy={(text) => copySection("product", text)}
+            >
               <div className="sub-block">
                 <h3>核心功能</h3>
                 <BulletList items={data.result.productInfo.coreFunctions} />
@@ -385,7 +497,13 @@ export default function Home() {
               </div>
             </Section>
 
-            <Section title="信息来源与可信度" icon={<ShieldCheck size={20} />}>
+            <Section
+              title="信息来源与可信度"
+              icon={<ShieldCheck size={20} />}
+              copyText={trustText}
+              copied={copiedKey === "trust"}
+              onCopy={(text) => copySection("trust", text)}
+            >
               <div className={`trust-meter trust-${data.result.trust.level}`}>
                 <strong>{data.result.trust.level.toUpperCase()}</strong>
                 <p>{data.result.trust.summary}</p>
@@ -403,7 +521,13 @@ export default function Home() {
             </Section>
           </div>
 
-          <Section title="产品分析" icon={<Target size={20} />}>
+          <Section
+            title="产品分析"
+            icon={<Target size={20} />}
+            copyText={analysisText}
+            copied={copiedKey === "analysis"}
+            onCopy={(text) => copySection("analysis", text)}
+          >
             <div className="analysis-grid">
               <div>
                 <h3>
@@ -440,6 +564,9 @@ export default function Home() {
               title="短视频口播文案"
               icon={<MessageSquareText size={20} />}
               aside={<span className={scriptCount <= 150 ? "count-ok" : "count-bad"}>{scriptCount}/150</span>}
+              copyText={scriptText}
+              copied={copiedKey === "script"}
+              onCopy={(text) => copySection("script", text)}
             >
               <div className="script-box">
                 <p className="hook">{data.result.script.hook}</p>
@@ -451,7 +578,13 @@ export default function Home() {
               </div>
             </Section>
 
-            <Section title="质量检查" icon={<BadgeCheck size={20} />}>
+            <Section
+              title="质量检查"
+              icon={<BadgeCheck size={20} />}
+              copyText={qualityText}
+              copied={copiedKey === "quality"}
+              onCopy={(text) => copySection("quality", text)}
+            >
               <div className="checks">
                 {data.result.quality.checks.map((check, index) => (
                   <CheckRow check={check} key={`${check.label}-${index}`} />
