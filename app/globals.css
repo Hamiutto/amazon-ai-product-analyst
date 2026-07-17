@@ -35,7 +35,8 @@ body {
 
 button,
 input,
-textarea {
+textarea,
+select {
   font: inherit;
 }
 
@@ -158,7 +159,8 @@ h1 {
 }
 
 input,
-textarea {
+textarea,
+select {
   background: #fff;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -174,7 +176,8 @@ textarea {
 }
 
 input:focus,
-textarea:focus {
+textarea:focus,
+select:focus {
   border-color: var(--teal);
   box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.12);
 }
@@ -259,6 +262,25 @@ textarea:focus {
 .manual-grid textarea {
   min-height: 42px;
   padding: 10px 12px;
+}
+
+.price-field {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) 150px;
+}
+
+.price-field input,
+.price-field select {
+  min-height: 42px;
+  padding: 10px 12px;
+}
+
+.price-hint {
+  color: var(--muted);
+  font-size: 12px;
+  grid-column: 1 / -1;
+  margin: 0;
 }
 
 .manual-grid textarea {
@@ -676,6 +698,10 @@ textarea:focus {
   .manual-grid,
   .meta-grid,
   .product-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .price-field {
     grid-template-columns: 1fr;
   }
 

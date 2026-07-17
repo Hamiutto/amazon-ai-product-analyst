@@ -19,15 +19,23 @@ import {
 import type { AnalyzeResponse, ManualProductInput, QualityCheck } from "@/lib/types";
 
 const sampleUrl = "https://www.amazon.com/dp/B0F6YQ96L5";
-
 const steps = ["解析链接", "获取商品信息", "生成产品分析", "质量检查"];
+const currencyOptions = [
+  { value: "auto", label: "自动识别" },
+  { value: "S$", label: "新加坡币 S$" },
+  { value: "$", label: "美元 $" },
+  { value: "HK$", label: "港币 HK$" },
+  { value: "€", label: "欧元 €" },
+  { value: "£", label: "英镑 £" },
+  { value: "¥", label: "日元 ¥" }
+];
 
 function factsToManual(facts?: AnalyzeResponse["facts"]): ManualProductInput {
   if (!facts) return {};
 
   return {
     title: facts.title || "",
-    price: facts.price || "",
+    price: splitPriceParts(facts.price).amount,
     category: facts.category || "",
     imageUrl: facts.imageUrl || "",
     features: facts.features.join("\n"),
@@ -36,6 +44,30 @@ function factsToManual(facts?: AnalyzeResponse["facts"]): ManualProductInput {
       .join("\n"),
     notes: facts.description || ""
   };
+}
+
+function splitPriceParts(price?: string) {
+  const trimmed = price?.trim() || "";
+  const match = trimmed.match(/^(S\$|HK\$|US\$|\$|€|£|¥)?\s*([\d,]+(?:\.\d+)?)$/i);
+
+  if (!match) {
+    return { currency: "auto", amount: trimmed };
+  }
+
+  return {
+    currency: (match[1] || "auto").toUpperCase(),
+    amount: match[2]
+  };
+}
+
+function composeManualPrice(amount?: string, currency = "auto") {
+  const trimmed = amount?.trim() || "";
+  if (!trimmed) return "";
+
+  const parsed = splitPriceParts(trimmed);
+  if (parsed.currency !== "auto" && parsed.amount) return `${parsed.currency}${parsed.amount}`;
+
+  return currency === "auto" ? parsed.amount || trimmed : `${currency}${parsed.amount || trimmed}`;
 }
 
 function StatusPill({ status }: { status?: string }) {
@@ -116,6 +148,7 @@ function CheckRow({ check }: { check: QualityCheck }) {
 export default function Home() {
   const [url, setUrl] = useState("");
   const [showManual, setShowManual] = useState(false);
+  const [manualCurrency, setManualCurrency] = useState("auto");
   const [manualDraft, setManualDraft] = useState<ManualProductInput>({});
   const [data, setData] = useState<AnalyzeResponse | null>(null);
   const [error, setError] = useState("");
@@ -131,7 +164,11 @@ export default function Home() {
 
     setManualDraft((current) => {
       const hasAnyValue = Object.values(current).some((value) => Boolean(value));
-      return hasAnyValue ? current : factsToManual(data.facts);
+      if (hasAnyValue) return current;
+
+      const parsed = splitPriceParts(data.facts.price);
+      setManualCurrency(parsed.currency);
+      return factsToManual(data.facts);
     });
   }, [showManual, data]);
 
@@ -162,12 +199,23 @@ export default function Home() {
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    await runAnalysis(showManual ? manualDraft : undefined);
+    const manualOverride = showManual
+      ? {
+          ...manualDraft,
+          price: composeManualPrice(manualDraft.price, manualCurrency)
+        }
+      : undefined;
+    await runAnalysis(manualOverride);
   }
 
   async function confirmManual() {
-    await runAnalysis(manualDraft);
+    await runAnalysis({
+      ...manualDraft,
+      price: composeManualPrice(manualDraft.price, manualCurrency)
+    });
   }
+
+  const displayPrice = data?.result.productInfo.price || "未提供";
 
   return (
     <main className="workspace">
@@ -215,7 +263,10 @@ export default function Home() {
               <div className="manual-help">
                 <p>首轮结果如果有误，就在这里修正。改完后点“确认补充并重新分析”，系统会把补充内容直接带入下一轮分析。</p>
                 {data && (
-                  <button type="button" className="ghost-button" onClick={() => setManualDraft(factsToManual(data.facts))}>
+                  <button type="button" className="ghost-button" onClick={() => {
+                    setManualDraft(factsToManual(data.facts));
+                    setManualCurrency(splitPriceParts(data.facts.price).currency);
+                  }}>
                     用当前结果预填
                   </button>
                 )}
@@ -227,11 +278,25 @@ export default function Home() {
                   onChange={(event) => setManualDraft((current) => ({ ...current, title: event.target.value }))}
                   placeholder="商品标题"
                 />
-                <input
-                  value={manualDraft.price || ""}
-                  onChange={(event) => setManualDraft((current) => ({ ...current, price: event.target.value }))}
-                  placeholder="价格"
-                />
+
+                <div className="price-field">
+                  <input
+                    value={manualDraft.price || ""}
+                    onChange={(event) => setManualDraft((current) => ({ ...current, price: event.target.value }))}
+                    placeholder="价格金额"
+                  />
+                  <select value={manualCurrency} onChange={(event) => setManualCurrency(event.target.value)}>
+                    {currencyOptions.map((option) => (
+                      <option value={option.value} key={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="price-hint">
+                    最终显示：{composeManualPrice(manualDraft.price, manualCurrency) || "未填写"}
+                  </p>
+                </div>
+
                 <input
                   value={manualDraft.category || ""}
                   onChange={(event) => setManualDraft((current) => ({ ...current, category: event.target.value }))}
@@ -302,7 +367,7 @@ export default function Home() {
               <div className="meta-grid">
                 <span>ASIN: {data.facts.asin || "未识别"}</span>
                 <span>品类: {data.result.productInfo.category}</span>
-                <span>价格: {data.result.productInfo.price}</span>
+                <span>价格: {displayPrice}</span>
                 <span>AI: {data.usedAI ? "DeepSeek" : "降级结果"}</span>
               </div>
             </div>
