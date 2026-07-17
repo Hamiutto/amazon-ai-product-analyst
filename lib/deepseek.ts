@@ -75,6 +75,13 @@ function deterministicChecks(result: ProductAnalysisResult, facts: ProductFacts)
       detail: facts.sourceSummary
     },
     {
+      label: "价格核对",
+      status: facts.price ? "warn" : "fail",
+      detail: facts.price
+        ? `自动提取价格为 ${facts.price}。Amazon 可能因地区、配送地址和汇率显示不同价格，若与浏览器可见价格不一致，请用人工补充模式覆盖。`
+        : "未能稳定提取商品价格，请使用人工补充模式填入页面可见价格。"
+    },
+    {
       label: "夸大表达",
       status: riskyWords.some((word) => text.includes(word)) ? "warn" : "pass",
       detail: riskyWords.some((word) => text.includes(word)) ? "发现可能需要人工确认的绝对化表达。" : "未发现明显绝对化表达。"
@@ -90,7 +97,7 @@ function normalizeResult(value: ProductAnalysisResult, facts: ProductFacts): Pro
     productInfo: {
       name: value?.productInfo?.name || fallback.productInfo.name,
       category: value?.productInfo?.category || fallback.productInfo.category,
-      price: value?.productInfo?.price || fallback.productInfo.price,
+      price: facts.price || fallback.productInfo.price,
       coreFunctions: value?.productInfo?.coreFunctions?.length ? value.productInfo.coreFunctions : fallback.productInfo.coreFunctions,
       specs: value?.productInfo?.specs?.length ? value.productInfo.specs : fallback.productInfo.specs
     },
@@ -121,7 +128,8 @@ function normalizeResult(value: ProductAnalysisResult, facts: ProductFacts): Pro
   };
 
   result.script.fullText = Array.from(result.script.fullText).slice(0, 150).join("");
-  result.quality.checks = [...deterministicChecks(result, facts), ...(result.quality.checks || [])].slice(0, 8);
+  const aiChecks = (result.quality.checks || []).filter((check) => !/(价格|售价|price|S\$|\$)/i.test(`${check.label} ${check.detail}`));
+  result.quality.checks = [...deterministicChecks(result, facts), ...aiChecks].slice(0, 8);
   if (facts.sourceStatus !== "complete" && !result.quality.riskWarnings.some((item) => item.includes("信息"))) {
     result.quality.riskWarnings.unshift("商品页面信息不完整，建议人工核对后再用于正式投放。");
   }

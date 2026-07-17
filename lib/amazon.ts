@@ -34,21 +34,61 @@ function matchFirst(html: string, patterns: RegExp[]) {
   return "";
 }
 
-function extractPrice(html: string) {
-  const splitPrice = html.match(
-    /class=["'][^"']*a-price-whole[^"']*["'][^>]*>([\s\S]*?)<\/span>\s*<span[^>]*class=["'][^"']*a-price-fraction[^"']*["'][^>]*>([\s\S]*?)<\/span>/i
+function normalizePrice(value: string) {
+  return decodeEntities(stripHtml(value))
+    .replace(/\s+/g, " ")
+    .replace(/\s*([.,])\s*/g, "$1")
+    .trim();
+}
+
+function blockFromId(html: string, id: string, size = 16000) {
+  const index = html.search(new RegExp(`id=["']${id}["']`, "i"));
+  return index >= 0 ? html.slice(index, index + size) : "";
+}
+
+function extractPriceFromBlock(block: string) {
+  const offscreenCandidates = Array.from(
+    block.matchAll(/class=["'][^"']*a-offscreen[^"']*["'][^>]*>([^<]*(?:S\$|\$|USD|SGD|£|€|¥)[^<]*)<\/span>/gi)
+  )
+    .map((match) => normalizePrice(match[1]))
+    .filter((price) => /\d/.test(price));
+
+  if (offscreenCandidates.length) return offscreenCandidates[0];
+
+  const splitPrice = block.match(
+    /class=["'][^"']*a-price-symbol[^"']*["'][^>]*>([\s\S]*?)<\/span>[\s\S]{0,300}?class=["'][^"']*a-price-whole[^"']*["'][^>]*>([\s\S]*?)<\/span>[\s\S]{0,300}?class=["'][^"']*a-price-fraction[^"']*["'][^>]*>([\s\S]*?)<\/span>/i
   );
-  if (splitPrice?.[1]) {
-    const whole = decodeEntities(stripHtml(splitPrice[1])).replace(/[^\d,.]/g, "");
-    const fraction = decodeEntities(stripHtml(splitPrice[2] || "")).replace(/[^\d]/g, "");
-    return fraction ? `$${whole}.${fraction}` : `$${whole}`;
+
+  if (splitPrice?.[2]) {
+    const symbol = normalizePrice(splitPrice[1]).replace(/\s/g, "");
+    const whole = normalizePrice(splitPrice[2]).replace(/[^\d,]/g, "");
+    const fraction = normalizePrice(splitPrice[3] || "").replace(/[^\d]/g, "");
+    return fraction ? `${symbol}${whole}.${fraction}` : `${symbol}${whole}`;
   }
 
-  return matchFirst(html, [
-    /id=["']priceblock_ourprice["'][^>]*>([\s\S]*?)<\/span>/i,
-    /id=["']priceblock_dealprice["'][^>]*>([\s\S]*?)<\/span>/i,
-    /class=["'][^"']*a-offscreen[^"']*["'][^>]*>(\$[^<]+)<\/span>/i
-  ]);
+  return "";
+}
+
+function extractPrice(html: string) {
+  const focusedBlocks = [
+    blockFromId(html, "corePriceDisplay_desktop_feature_div"),
+    blockFromId(html, "corePrice_feature_div"),
+    blockFromId(html, "apex_desktop"),
+    blockFromId(html, "buybox"),
+    blockFromId(html, "centerCol")
+  ].filter(Boolean);
+
+  for (const block of focusedBlocks) {
+    const price = extractPriceFromBlock(block);
+    if (price) return price;
+  }
+
+  return (
+    matchFirst(html, [
+      /id=["']priceblock_ourprice["'][^>]*>([\s\S]*?)<\/span>/i,
+      /id=["']priceblock_dealprice["'][^>]*>([\s\S]*?)<\/span>/i
+    ]) || extractPriceFromBlock(html)
+  );
 }
 
 function uniqueList(values: string[]) {
