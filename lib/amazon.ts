@@ -46,14 +46,20 @@ function blockFromId(html: string, id: string, size = 16000) {
   return index >= 0 ? html.slice(index, index + size) : "";
 }
 
-function extractPriceFromBlock(block: string) {
-  const offscreenCandidates = Array.from(
-    block.matchAll(/class=["'][^"']*a-offscreen[^"']*["'][^>]*>([^<]*(?:S\$|\$|USD|SGD|£|€|¥)[^<]*)<\/span>/gi)
-  )
-    .map((match) => normalizePrice(match[1]))
-    .filter((price) => /\d/.test(price));
+function isBadPriceContext(context: string) {
+  return /listprice|basisprice|was-price|strike|saving|savings|coupon|shipping|delivery|installment|monthly|points|subscribe|sns|rent|tradein|trade-in|other-sellers|used|new-from/i.test(
+    context
+  );
+}
 
-  if (offscreenCandidates.length) return offscreenCandidates[0];
+function priceCandidatesFromBlock(block: string) {
+  const candidates: string[] = [];
+
+  for (const match of block.matchAll(/class=["'][^"']*a-offscreen[^"']*["'][^>]*>([^<]*(?:S\$|US\$|\$|USD|SGD|£|€|¥)[^<]*)<\/span>/gi)) {
+    const context = block.slice(Math.max(0, match.index - 900), Math.min(block.length, match.index + 900));
+    const price = normalizePrice(match[1]);
+    if (/\d/.test(price) && !isBadPriceContext(context)) candidates.push(price);
+  }
 
   const splitPrice = block.match(
     /class=["'][^"']*a-price-symbol[^"']*["'][^>]*>([\s\S]*?)<\/span>[\s\S]{0,300}?class=["'][^"']*a-price-whole[^"']*["'][^>]*>([\s\S]*?)<\/span>[\s\S]{0,300}?class=["'][^"']*a-price-fraction[^"']*["'][^>]*>([\s\S]*?)<\/span>/i
@@ -63,19 +69,25 @@ function extractPriceFromBlock(block: string) {
     const symbol = normalizePrice(splitPrice[1]).replace(/\s/g, "");
     const whole = normalizePrice(splitPrice[2]).replace(/[^\d,]/g, "");
     const fraction = normalizePrice(splitPrice[3] || "").replace(/[^\d]/g, "");
-    return fraction ? `${symbol}${whole}.${fraction}` : `${symbol}${whole}`;
+    const price = fraction ? `${symbol}${whole}.${fraction}` : `${symbol}${whole}`;
+    if (/\d/.test(price)) candidates.push(price);
   }
 
-  return "";
+  return Array.from(new Set(candidates));
+}
+
+function extractPriceFromBlock(block: string) {
+  return priceCandidatesFromBlock(block)[0] || "";
 }
 
 function extractPrice(html: string) {
   const focusedBlocks = [
+    blockFromId(html, "priceToPay"),
+    blockFromId(html, "apexPriceToPay"),
+    blockFromId(html, "corePrice_desktop"),
     blockFromId(html, "corePriceDisplay_desktop_feature_div"),
     blockFromId(html, "corePrice_feature_div"),
-    blockFromId(html, "apex_desktop"),
-    blockFromId(html, "buybox"),
-    blockFromId(html, "centerCol")
+    blockFromId(html, "apex_desktop")
   ].filter(Boolean);
 
   for (const block of focusedBlocks) {
@@ -83,12 +95,19 @@ function extractPrice(html: string) {
     if (price) return price;
   }
 
-  return (
-    matchFirst(html, [
-      /id=["']priceblock_ourprice["'][^>]*>([\s\S]*?)<\/span>/i,
-      /id=["']priceblock_dealprice["'][^>]*>([\s\S]*?)<\/span>/i
-    ]) || extractPriceFromBlock(html)
-  );
+  const legacyPrice = matchFirst(html, [
+    /id=["']priceblock_ourprice["'][^>]*>([\s\S]*?)<\/span>/i,
+    /id=["']priceblock_dealprice["'][^>]*>([\s\S]*?)<\/span>/i
+  ]);
+  if (legacyPrice) return legacyPrice;
+
+  const priceToPayMatch = html.match(/"priceToPay"[\s\S]{0,2400}?(?:S\$|US\$|\$|USD|SGD|£|€|¥)\s?[\d,.]+/i)?.[0];
+  if (priceToPayMatch) {
+    const price = priceToPayMatch.match(/(?:S\$|US\$|\$|USD|SGD|£|€|¥)\s?[\d,.]+/i)?.[0];
+    if (price) return normalizePrice(price);
+  }
+
+  return "";
 }
 
 function safeJsonParse(value: string) {
