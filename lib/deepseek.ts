@@ -1,8 +1,18 @@
 import { ProductAnalysisResult, ProductFacts, QualityCheck } from "./types";
 
+function hasEnoughFacts(facts: ProductFacts) {
+  const hasCoreDescription = facts.features.length > 0 || Boolean(facts.description) || Object.keys(facts.specs).length > 0;
+  return Boolean(facts.title && hasCoreDescription);
+}
+
 function buildFallbackResult(facts: ProductFacts): ProductAnalysisResult {
   const name = facts.title || facts.asin || "Amazon 商品";
-  const featureText = facts.features.length ? facts.features : ["根据商品页面可见信息梳理核心卖点"];
+  const enoughFacts = hasEnoughFacts(facts);
+  const featureText = facts.features.length
+    ? facts.features
+    : enoughFacts
+      ? ["根据商品页面可见信息梳理核心卖点"]
+      : ["请补充商品标题、五点描述或规格后生成分析"];
   const category = facts.category || "待识别品类";
 
   return {
@@ -14,17 +24,19 @@ function buildFallbackResult(facts: ProductFacts): ProductAnalysisResult {
       specs: Object.entries(facts.specs).map(([key, value]) => `${key}: ${value}`).slice(0, 5)
     },
     analysis: {
-      targetUsers: ["正在寻找该品类解决方案的消费者", "对使用便利性和性价比敏感的用户"],
-      scenarios: ["日常使用场景", "需要快速解决具体痛点的购物场景"],
-      painPoints: ["不知道产品是否适合自己的真实需求", "担心功能描述和实际体验不一致"],
+      targetUsers: enoughFacts ? ["正在寻找该品类解决方案的消费者", "对使用便利性和性价比敏感的用户"] : ["补充商品信息后分析"],
+      scenarios: enoughFacts ? ["日常使用场景", "需要快速解决具体痛点的购物场景"] : ["补充商品信息后分析"],
+      painPoints: enoughFacts ? ["不知道产品是否适合自己的真实需求", "担心功能描述和实际体验不一致"] : ["补充商品信息后分析"],
       sellingPoints: featureText.slice(0, 4),
-      contentAngles: ["用一个具体场景切入，展示产品解决问题前后的差异", "围绕用户痛点解释核心功能"],
-      purchaseDrivers: ["功能是否匹配需求", "价格、规格和评价是否支持购买决策"]
+      contentAngles: enoughFacts ? ["用一个具体场景切入，展示产品解决问题前后的差异", "围绕用户痛点解释核心功能"] : ["补充商品信息后分析"],
+      purchaseDrivers: enoughFacts ? ["功能是否匹配需求", "价格、规格和评价是否支持购买决策"] : ["补充商品信息后分析"]
     },
     script: {
-      hook: "这个东西适不适合你，先看它解决的痛点。",
-      fullText: `这个东西适不适合你，先看它解决的痛点。${name}主要面向需要${category}解决方案的用户，重点可以从使用场景、核心功能和规格匹配度来看。下单前建议重点确认尺寸、价格和评价是否符合自己的需求。`,
-      sceneSuggestion: "先展示使用前的痛点，再切到产品细节和使用效果，最后提醒确认规格。"
+      hook: enoughFacts ? "这个东西适不适合你，先看它解决的痛点。" : "",
+      fullText: enoughFacts
+        ? `这个东西适不适合你，先看它解决的痛点。${name}主要面向需要${category}解决方案的用户，重点可以从使用场景、核心功能和规格匹配度来看。下单前建议重点确认尺寸、价格和评价是否符合自己的需求。`
+        : "",
+      sceneSuggestion: enoughFacts ? "先展示使用前的痛点，再切到产品细节和使用效果，最后提醒确认规格。" : "补充商品标题、核心卖点、规格或价格后再生成口播。"
     },
     quality: {
       checks: [],
@@ -32,10 +44,12 @@ function buildFallbackResult(facts: ProductFacts): ProductAnalysisResult {
       unsupportedClaims: []
     },
     trust: {
-      level: facts.sourceStatus === "complete" ? "medium" : "low",
+      level: enoughFacts && facts.sourceStatus === "complete" ? "medium" : "low",
       factualBasis: facts.sourceFields,
-      inferredParts: ["目标用户", "使用场景", "内容角度"],
-      summary: "在没有 AI API 或页面信息不足时，系统生成保守版本，避免编造销量、认证和效果承诺。"
+      inferredParts: enoughFacts ? ["目标用户", "使用场景", "内容角度"] : [],
+      summary: enoughFacts
+        ? "在没有 AI API 或页面信息不足时，系统生成保守版本，避免编造销量、认证和效果承诺。"
+        : "当前商品事实严重不足，系统不会生成看似确定的口播或分析。请补充商品信息后重新分析。"
     }
   };
 }
@@ -61,13 +75,13 @@ function deterministicChecks(result: ProductAnalysisResult, facts: ProductFacts)
   const checks: QualityCheck[] = [
     {
       label: "口播长度",
-      status: length <= 150 ? "pass" : "fail",
-      detail: `当前约 ${length} 字，要求 150 字以内。`
+      status: text ? (length <= 150 ? "pass" : "fail") : "warn",
+      detail: text ? `当前约 ${length} 字，要求 150 字以内。` : "商品信息不足，暂不生成口播。"
     },
     {
       label: "前 5 秒钩子",
-      status: hasHook || result.script.hook ? "pass" : "warn",
-      detail: result.script.hook || "建议补充明确开场钩子。"
+      status: text && (hasHook || result.script.hook) ? "pass" : "warn",
+      detail: result.script.hook || "补充商品信息后生成明确开场钩子。"
     },
     {
       label: "事实来源",
@@ -140,6 +154,13 @@ export async function analyzeWithDeepSeek(facts: ProductFacts) {
   const apiKey = process.env.DEEPSEEK_API_KEY;
   const baseUrl = process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com";
   const model = process.env.DEEPSEEK_MODEL || "deepseek-chat";
+
+  if (!hasEnoughFacts(facts)) {
+    return {
+      result: normalizeResult(buildFallbackResult(facts), facts),
+      usedAI: false
+    };
+  }
 
   if (!apiKey) {
     return {

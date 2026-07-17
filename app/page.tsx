@@ -330,6 +330,19 @@ export default function Home() {
     }
   }
 
+  const needsSupplement = data
+    ? data.facts.sourceStatus !== "manual" &&
+      (data.result.trust.level === "low" || data.facts.sourceFields.length < 3 || data.facts.missingFields.length >= 4)
+    : false;
+
+  function openManualFromWarning() {
+    if (!data) return;
+
+    setShowManual(true);
+    setManualDraft(factsToManual(data.facts));
+    setManualCurrency(splitPriceParts(data.facts.price).currency);
+  }
+
   return (
     <main className="workspace">
       <header className="topbar">
@@ -468,6 +481,21 @@ export default function Home() {
 
       {data && (
         <div className="result-layout">
+          {needsSupplement && (
+            <section className="recovery-panel">
+              <div>
+                <strong>商品信息获取不完整，需要补充后再生成正式分析</strong>
+                <p>
+                  当前只获取到少量商品事实，因此系统不会把推测内容包装成确定结论。你可以从商品页复制标题、价格、五点描述、规格或图片链接；补充后会再次交给 AI
+                  基于这些事实重新分析，并继续做夸大、虚构和字段缺失检查。
+                </p>
+              </div>
+              <button type="button" onClick={openManualFromWarning}>
+                打开人工补充
+              </button>
+            </section>
+          )}
+
           <section className="product-strip">
             <div className="product-image">
               {data.facts.imageUrl ? <img src={data.facts.imageUrl} alt={data.result.productInfo.name} /> : <ImageIcon size={34} />}
@@ -578,18 +606,30 @@ export default function Home() {
               title="短视频口播文案"
               icon={<MessageSquareText size={20} />}
               aside={<span className={scriptCount <= 150 ? "count-ok" : "count-bad"}>{scriptCount}/150</span>}
-              copyText={scriptText}
+              copyText={needsSupplement ? undefined : scriptText}
               copied={copiedKey === "script"}
               onCopy={(text) => copySection("script", text)}
             >
-              <div className="script-box">
-                <p className="hook">{data.result.script.hook}</p>
-                <p>{data.result.script.fullText}</p>
-              </div>
-              <div className="scene-note">
-                <PenLine size={16} />
-                {data.result.script.sceneSuggestion}
-              </div>
+              {needsSupplement ? (
+                <div className="script-placeholder">
+                  <strong>暂不生成口播</strong>
+                  <p>商品标题、卖点或规格不足时生成口播容易失真。补充商品信息并重新分析后，这里会生成可直接使用的 150 字以内短视频文案。</p>
+                  <button type="button" onClick={openManualFromWarning}>
+                    补充信息后生成
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <div className="script-box">
+                    <p className="hook">{data.result.script.hook}</p>
+                    <p>{data.result.script.fullText}</p>
+                  </div>
+                  <div className="scene-note">
+                    <PenLine size={16} />
+                    {data.result.script.sceneSuggestion}
+                  </div>
+                </>
+              )}
             </Section>
 
             <Section
