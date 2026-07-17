@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   BadgeCheck,
@@ -21,6 +21,22 @@ import type { AnalyzeResponse, ManualProductInput, QualityCheck } from "@/lib/ty
 const sampleUrl = "https://www.amazon.com/dp/B0F6YQ96L5";
 
 const steps = ["解析链接", "获取商品信息", "生成产品分析", "质量检查"];
+
+function factsToManual(facts?: AnalyzeResponse["facts"]): ManualProductInput {
+  if (!facts) return {};
+
+  return {
+    title: facts.title || "",
+    price: facts.price || "",
+    category: facts.category || "",
+    imageUrl: facts.imageUrl || "",
+    features: facts.features.join("\n"),
+    specs: Object.entries(facts.specs)
+      .map(([key, value]) => `${key}: ${value}`)
+      .join("\n"),
+    notes: facts.description || ""
+  };
+}
 
 function StatusPill({ status }: { status?: string }) {
   const label =
@@ -100,7 +116,7 @@ function CheckRow({ check }: { check: QualityCheck }) {
 export default function Home() {
   const [url, setUrl] = useState("");
   const [showManual, setShowManual] = useState(false);
-  const [manual, setManual] = useState<ManualProductInput>({});
+  const [manualDraft, setManualDraft] = useState<ManualProductInput>({});
   const [data, setData] = useState<AnalyzeResponse | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -110,8 +126,16 @@ export default function Home() {
     return Array.from(text.replace(/\s+/g, "")).length;
   }, [data]);
 
-  async function submit(event: FormEvent) {
-    event.preventDefault();
+  useEffect(() => {
+    if (!showManual || !data) return;
+
+    setManualDraft((current) => {
+      const hasAnyValue = Object.values(current).some((value) => Boolean(value));
+      return hasAnyValue ? current : factsToManual(data.facts);
+    });
+  }, [showManual, data]);
+
+  async function runAnalysis(manualOverride?: ManualProductInput) {
     setLoading(true);
     setError("");
     setData(null);
@@ -122,9 +146,10 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           url,
-          manual: showManual ? manual : undefined
+          manual: manualOverride
         })
       });
+
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "分析失败");
       setData(payload);
@@ -133,6 +158,15 @@ export default function Home() {
     } finally {
       setLoading(false);
     }
+  }
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    await runAnalysis(showManual ? manualDraft : undefined);
+  }
+
+  async function confirmManual() {
+    await runAnalysis(manualDraft);
   }
 
   return (
@@ -162,7 +196,7 @@ export default function Home() {
             />
             <button disabled={loading} type="submit">
               {loading ? <Loader2 className="spin" size={18} /> : <Sparkles size={18} />}
-              {loading ? "分析中" : "开始分析"}
+              {loading ? "分析中" : showManual && data ? "重新分析" : "开始分析"}
             </button>
           </div>
 
@@ -177,38 +211,55 @@ export default function Home() {
           </div>
 
           {showManual && (
-            <div className="manual-grid">
-              <input
-                value={manual.title || ""}
-                onChange={(event) => setManual((current) => ({ ...current, title: event.target.value }))}
-                placeholder="商品标题"
-              />
-              <input
-                value={manual.price || ""}
-                onChange={(event) => setManual((current) => ({ ...current, price: event.target.value }))}
-                placeholder="价格"
-              />
-              <input
-                value={manual.category || ""}
-                onChange={(event) => setManual((current) => ({ ...current, category: event.target.value }))}
-                placeholder="品类"
-              />
-              <input
-                value={manual.imageUrl || ""}
-                onChange={(event) => setManual((current) => ({ ...current, imageUrl: event.target.value }))}
-                placeholder="商品图片链接"
-              />
-              <textarea
-                value={manual.features || ""}
-                onChange={(event) => setManual((current) => ({ ...current, features: event.target.value }))}
-                placeholder="五点描述 / 核心卖点"
-              />
-              <textarea
-                value={manual.specs || ""}
-                onChange={(event) => setManual((current) => ({ ...current, specs: event.target.value }))}
-                placeholder="规格参数，如 Size: 10 x 8 in"
-              />
-            </div>
+            <>
+              <div className="manual-help">
+                <p>首轮结果如果有误，就在这里修正。改完后点“确认补充并重新分析”，系统会把补充内容直接带入下一轮分析。</p>
+                {data && (
+                  <button type="button" className="ghost-button" onClick={() => setManualDraft(factsToManual(data.facts))}>
+                    用当前结果预填
+                  </button>
+                )}
+              </div>
+
+              <div className="manual-grid">
+                <input
+                  value={manualDraft.title || ""}
+                  onChange={(event) => setManualDraft((current) => ({ ...current, title: event.target.value }))}
+                  placeholder="商品标题"
+                />
+                <input
+                  value={manualDraft.price || ""}
+                  onChange={(event) => setManualDraft((current) => ({ ...current, price: event.target.value }))}
+                  placeholder="价格"
+                />
+                <input
+                  value={manualDraft.category || ""}
+                  onChange={(event) => setManualDraft((current) => ({ ...current, category: event.target.value }))}
+                  placeholder="品类"
+                />
+                <input
+                  value={manualDraft.imageUrl || ""}
+                  onChange={(event) => setManualDraft((current) => ({ ...current, imageUrl: event.target.value }))}
+                  placeholder="商品图片链接"
+                />
+                <textarea
+                  value={manualDraft.features || ""}
+                  onChange={(event) => setManualDraft((current) => ({ ...current, features: event.target.value }))}
+                  placeholder="五点描述 / 核心卖点"
+                />
+                <textarea
+                  value={manualDraft.specs || ""}
+                  onChange={(event) => setManualDraft((current) => ({ ...current, specs: event.target.value }))}
+                  placeholder="规格参数，如 Size: 10 x 8 in"
+                />
+              </div>
+
+              <div className="manual-actions">
+                <button className="confirm-button" type="button" disabled={loading || !url} onClick={confirmManual}>
+                  {loading ? "重新分析中" : data ? "确认补充并重新分析" : "确认并开始分析"}
+                </button>
+              </div>
+            </>
           )}
         </form>
 

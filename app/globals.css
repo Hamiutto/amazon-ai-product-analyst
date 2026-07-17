@@ -237,6 +237,24 @@ textarea:focus {
   margin-top: 14px;
 }
 
+.manual-help {
+  align-items: center;
+  background: var(--blue-soft);
+  border: 1px solid rgba(49, 92, 159, 0.16);
+  border-radius: 8px;
+  color: var(--blue);
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  line-height: 1.5;
+  margin-top: 14px;
+  padding: 12px 14px;
+}
+
+.manual-help p {
+  margin-bottom: 0;
+}
+
 .manual-grid input,
 .manual-grid textarea {
   min-height: 42px;
@@ -246,6 +264,29 @@ textarea:focus {
 .manual-grid textarea {
   min-height: 96px;
   resize: vertical;
+}
+
+.manual-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.confirm-button {
+  align-items: center;
+  background: var(--teal);
+  border: 0;
+  border-radius: 8px;
+  color: #fff;
+  display: inline-flex;
+  font-weight: 800;
+  min-height: 40px;
+  padding: 0 16px;
+}
+
+.confirm-button:disabled {
+  cursor: progress;
+  opacity: 0.72;
 }
 
 .process-panel {
