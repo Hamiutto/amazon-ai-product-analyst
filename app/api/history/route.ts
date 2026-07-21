@@ -4,6 +4,18 @@ import type { AnalyzeResponse } from "@/lib/types";
 
 export const runtime = "nodejs";
 
+function historyError(message: string, error: unknown) {
+  console.error(message, error);
+
+  const detail = error instanceof Error ? error.message : "";
+  if (/AnalysisHistory.*does not exist|does not exist in the current database|P2021/i.test(detail)) {
+    return NextResponse.json({ error: `${message}：历史数据表尚未创建，请先完成 Supabase 数据库初始化。` }, { status: 500 });
+  }
+
+  const suffix = process.env.NODE_ENV === "development" && detail ? `：${detail}` : "。";
+  return NextResponse.json({ error: `${message}${suffix}` }, { status: 500 });
+}
+
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
@@ -11,8 +23,8 @@ export async function GET(request: Request) {
     const items = await listAnalysisHistory(clientId);
 
     return NextResponse.json({ items });
-  } catch {
-    return NextResponse.json({ error: "读取历史记录失败。" }, { status: 500 });
+  } catch (error) {
+    return historyError("读取历史记录失败", error);
   }
 }
 
@@ -34,7 +46,7 @@ export async function POST(request: Request) {
     });
 
     return NextResponse.json({ item });
-  } catch {
-    return NextResponse.json({ error: "保存历史记录失败。" }, { status: 500 });
+  } catch (error) {
+    return historyError("保存历史记录失败", error);
   }
 }
