@@ -92,3 +92,8 @@ export type AnalysisHistoryDetail = {
   result: ProductAnalysisResult;
   usedAI: boolean;
 };
+
+export type AuthUser = {
+  id: string;
+  email: string | null;
+};

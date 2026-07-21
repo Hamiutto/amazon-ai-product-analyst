@@ -12,6 +12,7 @@ import {
   ImageIcon,
   LinkIcon,
   Loader2,
+  LogOut,
   MessageSquareText,
   PenLine,
   Trash2,
@@ -20,7 +21,8 @@ import {
   Target,
   Users
 } from "lucide-react";
-import type { AnalysisHistoryDetail, AnalysisHistorySummary, AnalyzeResponse, ManualProductInput, QualityCheck } from "@/lib/types";
+import AuthPanel from "@/components/auth-panel";
+import type { AnalysisHistoryDetail, AnalysisHistorySummary, AnalyzeResponse, AuthUser, ManualProductInput, QualityCheck } from "@/lib/types";
 
 const sampleUrl = "https://www.amazon.com/dp/B0F6YQ96L5";
 const clientIdStorageKey = "amazon-analyst-client-id";
@@ -205,12 +207,18 @@ export default function Home() {
   const [clientId, setClientId] = useState("");
   const [historyItems, setHistoryItems] = useState<AnalysisHistorySummary[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
   const skipNextUrlResetRef = useRef(false);
 
   const scriptCount = useMemo(() => {
     const text = data?.result.script.fullText || "";
     return Array.from(text.replace(/\s+/g, "")).length;
   }, [data]);
+
+  useEffect(() => {
+    void loadCurrentUser();
+  }, []);
 
   useEffect(() => {
     const id = getClientId();
@@ -271,6 +279,19 @@ export default function Home() {
       setError(err instanceof Error ? err.message : "分析失败");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadCurrentUser() {
+    setAuthLoading(true);
+    try {
+      const response = await fetch("/api/auth/me", { cache: "no-store" });
+      const payload = (await response.json()) as { user?: AuthUser | null };
+      setCurrentUser(payload.user || null);
+    } catch {
+      setCurrentUser(null);
+    } finally {
+      setAuthLoading(false);
     }
   }
 
@@ -369,6 +390,18 @@ export default function Home() {
       setError(err instanceof Error ? err.message : "删除历史记录失败");
     } finally {
       setHistoryLoading(false);
+    }
+  }
+
+  async function logout() {
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+    } finally {
+      setCurrentUser(null);
+      setData(null);
+      setError("");
+      setShowManual(false);
+      setCopiedKey("");
     }
   }
 
@@ -479,6 +512,23 @@ export default function Home() {
     setManualCurrency(splitPriceParts(data.facts.price).currency);
   }
 
+  if (authLoading) {
+    return (
+      <main className="workspace">
+        <header className="topbar">
+          <div>
+            <p className="eyebrow">Cross-border Ecommerce AI Tool</p>
+            <h1>AI 产品分析助手</h1>
+          </div>
+          <div className="topbar-badge">
+            <Loader2 className="spin" size={18} />
+            正在检查登录状态
+          </div>
+        </header>
+      </main>
+    );
+  }
+
   return (
     <main className="workspace">
       <header className="topbar">
@@ -486,338 +536,357 @@ export default function Home() {
           <p className="eyebrow">Cross-border Ecommerce AI Tool</p>
           <h1>AI 产品分析助手</h1>
         </div>
-        <div className="topbar-badge">
-          <ShieldCheck size={18} />
-          事实约束生成
-        </div>
+        {currentUser ? (
+          <div className="topbar-user">
+            <div className="topbar-badge">
+              <ShieldCheck size={18} />
+              {currentUser.email || currentUser.id}
+            </div>
+            <button className="logout-button" type="button" onClick={logout}>
+              <LogOut size={16} />
+              退出
+            </button>
+          </div>
+        ) : (
+          <div className="topbar-badge">
+            <ShieldCheck size={18} />
+            未登录
+          </div>
+        )}
       </header>
 
-      <section className="command-band">
-        <form onSubmit={submit} className="input-panel">
-          <label htmlFor="url">Amazon 商品链接</label>
-          <div className="url-row">
-            <LinkIcon size={20} />
-            <input
-              id="url"
-              value={url}
-              onChange={(event) => setUrl(event.target.value)}
-              placeholder={sampleUrl}
-              required
-            />
-            <button disabled={loading} type="submit">
-              {loading ? <Loader2 className="spin" size={18} /> : <Sparkles size={18} />}
-              {loading ? "分析中" : showManual && data ? "重新分析" : "开始分析"}
-            </button>
-          </div>
-
-          <div className="controls-row">
-            <button className="ghost-button" type="button" onClick={() => setUrl(sampleUrl)}>
-              填入示例
-            </button>
-            <label className="toggle">
-              <input checked={showManual} onChange={(event) => setShowManual(event.target.checked)} type="checkbox" />
-              <span>人工补充模式</span>
-            </label>
-          </div>
-
-          {showManual && (
-            <>
-              <div className="manual-help">
-                <p>首轮结果如果有误，就在这里修正。改完后点“确认补充并重新分析”，系统会把补充内容直接带入下一轮分析。</p>
-                {data && (
-                  <button type="button" className="ghost-button" onClick={() => {
-                    setManualDraft(factsToManual(data.facts));
-                    setManualCurrency(splitPriceParts(data.facts.price).currency);
-                  }}>
-                    用当前结果预填
-                  </button>
-                )}
-              </div>
-
-              <div className="manual-grid">
+      {!currentUser ? (
+        <AuthPanel onAuthenticated={setCurrentUser} />
+      ) : (
+        <>
+          <section className="command-band">
+            <form onSubmit={submit} className="input-panel">
+              <label htmlFor="url">Amazon 商品链接</label>
+              <div className="url-row">
+                <LinkIcon size={20} />
                 <input
-                  value={manualDraft.title || ""}
-                  onChange={(event) => setManualDraft((current) => ({ ...current, title: event.target.value }))}
-                  placeholder="商品标题"
+                  id="url"
+                  value={url}
+                  onChange={(event) => setUrl(event.target.value)}
+                  placeholder={sampleUrl}
+                  required
                 />
-
-                <div className="price-field">
-                  <input
-                    value={manualDraft.price || ""}
-                    onChange={(event) => setManualDraft((current) => ({ ...current, price: event.target.value }))}
-                    placeholder="价格金额"
-                  />
-                  <select value={manualCurrency} onChange={(event) => setManualCurrency(event.target.value)}>
-                    {currencyOptions.map((option) => (
-                      <option value={option.value} key={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                  <p className="price-hint">
-                    最终显示：{composeManualPrice(manualDraft.price, manualCurrency) || "未填写"}
-                  </p>
-                </div>
-
-                <input
-                  value={manualDraft.category || ""}
-                  onChange={(event) => setManualDraft((current) => ({ ...current, category: event.target.value }))}
-                  placeholder="品类"
-                />
-                <input
-                  value={manualDraft.imageUrl || ""}
-                  onChange={(event) => setManualDraft((current) => ({ ...current, imageUrl: event.target.value }))}
-                  placeholder="商品图片链接"
-                />
-                <textarea
-                  value={manualDraft.features || ""}
-                  onChange={(event) => setManualDraft((current) => ({ ...current, features: event.target.value }))}
-                  placeholder="五点描述 / 核心卖点"
-                />
-                <textarea
-                  value={manualDraft.specs || ""}
-                  onChange={(event) => setManualDraft((current) => ({ ...current, specs: event.target.value }))}
-                  placeholder="规格参数，如 Size: 10 x 8 in"
-                />
-              </div>
-
-              <div className="manual-actions">
-                <button className="confirm-button" type="button" disabled={loading || !url} onClick={confirmManual}>
-                  {loading ? "重新分析中" : data ? "确认补充并重新分析" : "确认并开始分析"}
+                <button disabled={loading} type="submit">
+                  {loading ? <Loader2 className="spin" size={18} /> : <Sparkles size={18} />}
+                  {loading ? "分析中" : showManual && data ? "重新分析" : "开始分析"}
                 </button>
               </div>
-            </>
-          )}
-        </form>
 
-        <div className="side-rail">
-          <div className="process-panel">
-            {steps.map((step, index) => (
-              <div className={`step ${loading && index < 3 ? "active" : data ? "done" : ""}`} key={step}>
-                <span>{index + 1}</span>
-                {step}
+              <div className="controls-row">
+                <button className="ghost-button" type="button" onClick={() => setUrl(sampleUrl)}>
+                  填入示例
+                </button>
+                <label className="toggle">
+                  <input checked={showManual} onChange={(event) => setShowManual(event.target.checked)} type="checkbox" />
+                  <span>人工补充模式</span>
+                </label>
               </div>
-            ))}
-          </div>
 
-          <aside className="history-panel">
-            <div className="history-title">
-              <div>
-                <History size={18} />
-                <h2>最近历史</h2>
-              </div>
-              <button type="button" onClick={() => loadHistory()} disabled={historyLoading || !clientId}>
-                {historyLoading ? <Loader2 className="spin" size={15} /> : "刷新"}
-              </button>
-            </div>
-
-            {historyItems.length ? (
-              <div className="history-list">
-                {historyItems.map((item) => (
-                  <div className="history-item" key={item.id}>
-                    <button type="button" onClick={() => restoreHistory(item.id)}>
-                      <strong>{item.productName || item.asin || "未命名商品"}</strong>
-                      <span>{formatHistoryTime(item.createdAt)} · {item.usedAI ? "AI" : "降级"}</span>
-                    </button>
-                    <button className="icon-button" type="button" onClick={() => removeHistory(item.id)} aria-label="删除历史记录">
-                      <Trash2 size={15} />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="history-empty">{historyLoading ? "读取历史中..." : "完成一次分析后会自动保存。"}</p>
-            )}
-          </aside>
-        </div>
-      </section>
-
-      {error && (
-        <div className="error-box">
-          <AlertTriangle size={18} />
-          {error}
-        </div>
-      )}
-
-      {!data && !loading && (
-        <section className="empty-state">
-          <FileSearch size={32} />
-          <h2>等待商品分析</h2>
-          <p>结果会拆分为商品事实、产品理解、短视频口播、质量检查和可信度提示。</p>
-        </section>
-      )}
-
-      {data && (
-        <div className="result-layout">
-          {needsSupplement && (
-            <section className="recovery-panel">
-              <div>
-                <strong>商品信息获取不完整，需要补充后再生成正式分析</strong>
-                <p>当前只获取到少量商品信息，你可以从商品页复制标题、价格、五点描述、规格或图片链接，补充后会结合初始信息重新分析。</p>
-              </div>
-              <button type="button" onClick={openManualFromWarning}>
-                打开人工补充
-              </button>
-            </section>
-          )}
-
-          <section className="product-strip">
-            <div className="product-image">
-              {data.facts.imageUrl ? <img src={data.facts.imageUrl} alt={data.result.productInfo.name} /> : <ImageIcon size={34} />}
-            </div>
-            <div className="product-main">
-              <div className="product-heading">
-                <h2>{data.result.productInfo.name}</h2>
-                <div className="product-actions">
-                  <StatusPill status={data.facts.sourceStatus} />
-                  <button className="copy-button" type="button" onClick={() => copySection("summary", productSummaryText)}>
-                    {copiedKey === "summary" ? <Check size={15} /> : <Copy size={15} />}
-                    {copiedKey === "summary" ? "已复制" : "复制概览"}
-                  </button>
-                </div>
-              </div>
-              <div className="meta-grid">
-                <span>ASIN: {data.facts.asin || "未识别"}</span>
-                <span>品类: {data.result.productInfo.category}</span>
-                <span>价格: {displayPrice}</span>
-                <span>AI: {data.usedAI ? "DeepSeek" : "降级结果"}</span>
-              </div>
-            </div>
-          </section>
-
-          <div className="grid-two">
-            <Section
-              title="产品信息整理"
-              icon={<ClipboardCheck size={20} />}
-              aside={<StatusPill status={data.facts.sourceStatus} />}
-              copyText={productInfoText}
-              copied={copiedKey === "product"}
-              onCopy={(text) => copySection("product", text)}
-            >
-              <div className="sub-block">
-                <h3>核心功能</h3>
-                <BulletList items={data.result.productInfo.coreFunctions} />
-              </div>
-              <div className="sub-block">
-                <h3>规格参数</h3>
-                <BulletList items={data.result.productInfo.specs} />
-              </div>
-            </Section>
-
-            <Section
-              title="信息来源与可信度"
-              icon={<ShieldCheck size={20} />}
-              copyText={trustText}
-              copied={copiedKey === "trust"}
-              onCopy={(text) => copySection("trust", text)}
-            >
-              <div className={`trust-meter trust-${data.result.trust.level}`}>
-                <strong>{data.result.trust.level.toUpperCase()}</strong>
-                <p>{data.result.trust.summary}</p>
-              </div>
-              <div className="sub-block">
-                <h3>已获取字段</h3>
-                <TagList items={data.facts.sourceFields} tone="accent" />
-              </div>
-              {!!data.facts.missingFields.length && (
-                <div className="sub-block">
-                  <h3>建议核对字段</h3>
-                  <TagList items={data.facts.missingFields} tone="risk" />
-                </div>
-              )}
-            </Section>
-          </div>
-
-          <Section
-            title="产品分析"
-            icon={<Target size={20} />}
-            copyText={analysisText}
-            copied={copiedKey === "analysis"}
-            onCopy={(text) => copySection("analysis", text)}
-          >
-            <div className="analysis-grid">
-              <div>
-                <h3>
-                  <Users size={16} />
-                  目标用户
-                </h3>
-                <BulletList items={data.result.analysis.targetUsers} />
-              </div>
-              <div>
-                <h3>使用场景</h3>
-                <BulletList items={data.result.analysis.scenarios} />
-              </div>
-              <div>
-                <h3>用户痛点</h3>
-                <BulletList items={data.result.analysis.painPoints} />
-              </div>
-              <div>
-                <h3>核心卖点</h3>
-                <BulletList items={data.result.analysis.sellingPoints} />
-              </div>
-              <div>
-                <h3>内容切入角度</h3>
-                <BulletList items={data.result.analysis.contentAngles} />
-              </div>
-              <div>
-                <h3>购买决策点</h3>
-                <BulletList items={data.result.analysis.purchaseDrivers} />
-              </div>
-            </div>
-          </Section>
-
-          <div className="grid-two">
-            <Section
-              title="短视频口播文案"
-              icon={<MessageSquareText size={20} />}
-              aside={<span className={scriptCount <= 150 ? "count-ok" : "count-bad"}>{scriptCount}/150</span>}
-              copyText={needsSupplement ? undefined : scriptText}
-              copied={copiedKey === "script"}
-              onCopy={(text) => copySection("script", text)}
-            >
-              {needsSupplement ? (
-                <div className="script-placeholder">
-                  <strong>暂不生成口播</strong>
-                  <p>商品标题、卖点或规格不足时生成口播容易失真。补充商品信息并重新分析后，这里会生成可直接使用的 150 字以内短视频文案。</p>
-                  <button type="button" onClick={openManualFromWarning}>
-                    补充信息后生成
-                  </button>
-                </div>
-              ) : (
+              {showManual && (
                 <>
-                  <div className="script-box">
-                    <p className="hook">{data.result.script.hook}</p>
-                    <p>{data.result.script.fullText}</p>
+                  <div className="manual-help">
+                    <p>首轮结果如果有误，就在这里修正。改完后点“确认补充并重新分析”，系统会把补充内容直接带入下一轮分析。</p>
+                    {data && (
+                      <button type="button" className="ghost-button" onClick={() => {
+                        setManualDraft(factsToManual(data.facts));
+                        setManualCurrency(splitPriceParts(data.facts.price).currency);
+                      }}>
+                        用当前结果预填
+                      </button>
+                    )}
                   </div>
-                  <div className="scene-note">
-                    <PenLine size={16} />
-                    {data.result.script.sceneSuggestion}
+
+                  <div className="manual-grid">
+                    <input
+                      value={manualDraft.title || ""}
+                      onChange={(event) => setManualDraft((current) => ({ ...current, title: event.target.value }))}
+                      placeholder="商品标题"
+                    />
+
+                    <div className="price-field">
+                      <input
+                        value={manualDraft.price || ""}
+                        onChange={(event) => setManualDraft((current) => ({ ...current, price: event.target.value }))}
+                        placeholder="价格金额"
+                      />
+                      <select value={manualCurrency} onChange={(event) => setManualCurrency(event.target.value)}>
+                        {currencyOptions.map((option) => (
+                          <option value={option.value} key={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="price-hint">
+                        最终显示：{composeManualPrice(manualDraft.price, manualCurrency) || "未填写"}
+                      </p>
+                    </div>
+
+                    <input
+                      value={manualDraft.category || ""}
+                      onChange={(event) => setManualDraft((current) => ({ ...current, category: event.target.value }))}
+                      placeholder="品类"
+                    />
+                    <input
+                      value={manualDraft.imageUrl || ""}
+                      onChange={(event) => setManualDraft((current) => ({ ...current, imageUrl: event.target.value }))}
+                      placeholder="商品图片链接"
+                    />
+                    <textarea
+                      value={manualDraft.features || ""}
+                      onChange={(event) => setManualDraft((current) => ({ ...current, features: event.target.value }))}
+                      placeholder="五点描述 / 核心卖点"
+                    />
+                    <textarea
+                      value={manualDraft.specs || ""}
+                      onChange={(event) => setManualDraft((current) => ({ ...current, specs: event.target.value }))}
+                      placeholder="规格参数，如 Size: 10 x 8 in"
+                    />
+                  </div>
+
+                  <div className="manual-actions">
+                    <button className="confirm-button" type="button" disabled={loading || !url} onClick={confirmManual}>
+                      {loading ? "重新分析中" : data ? "确认补充并重新分析" : "确认并开始分析"}
+                    </button>
                   </div>
                 </>
               )}
-            </Section>
+            </form>
 
-            <Section
-              title="质量检查"
-              icon={<BadgeCheck size={20} />}
-              copyText={qualityText}
-              copied={copiedKey === "quality"}
-              onCopy={(text) => copySection("quality", text)}
-            >
-              <div className="checks">
-                {data.result.quality.checks.map((check, index) => (
-                  <CheckRow check={check} key={`${check.label}-${index}`} />
+            <div className="side-rail">
+              <div className="process-panel">
+                {steps.map((step, index) => (
+                  <div className={`step ${loading && index < 3 ? "active" : data ? "done" : ""}`} key={step}>
+                    <span>{index + 1}</span>
+                    {step}
+                  </div>
                 ))}
               </div>
-              {!!data.result.quality.riskWarnings.length && (
-                <div className="sub-block">
-                  <h3>风险提示</h3>
-                  <TagList items={data.result.quality.riskWarnings} tone="risk" />
+
+              <aside className="history-panel">
+                <div className="history-title">
+                  <div>
+                    <History size={18} />
+                    <h2>最近历史</h2>
+                  </div>
+                  <button type="button" onClick={() => loadHistory()} disabled={historyLoading || !clientId}>
+                    {historyLoading ? <Loader2 className="spin" size={15} /> : "刷新"}
+                  </button>
                 </div>
+
+                {historyItems.length ? (
+                  <div className="history-list">
+                    {historyItems.map((item) => (
+                      <div className="history-item" key={item.id}>
+                        <button type="button" onClick={() => restoreHistory(item.id)}>
+                          <strong>{item.productName || item.asin || "未命名商品"}</strong>
+                          <span>{formatHistoryTime(item.createdAt)} · {item.usedAI ? "AI" : "降级"}</span>
+                        </button>
+                        <button className="icon-button" type="button" onClick={() => removeHistory(item.id)} aria-label="删除历史记录">
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="history-empty">{historyLoading ? "读取历史中..." : "完成一次分析后会自动保存。"}</p>
+                )}
+              </aside>
+            </div>
+          </section>
+
+          {error && (
+            <div className="error-box">
+              <AlertTriangle size={18} />
+              {error}
+            </div>
+          )}
+
+          {!data && !loading && (
+            <section className="empty-state">
+              <FileSearch size={32} />
+              <h2>等待商品分析</h2>
+              <p>结果会拆分为商品事实、产品理解、短视频口播、质量检查和可信度提示。</p>
+            </section>
+          )}
+
+          {data && (
+            <div className="result-layout">
+              {needsSupplement && (
+                <section className="recovery-panel">
+                  <div>
+                    <strong>商品信息获取不完整，需要补充后再生成正式分析</strong>
+                    <p>当前只获取到少量商品信息，你可以从商品页复制标题、价格、五点描述、规格或图片链接，补充后会结合初始信息重新分析。</p>
+                  </div>
+                  <button type="button" onClick={openManualFromWarning}>
+                    打开人工补充
+                  </button>
+                </section>
               )}
-            </Section>
-          </div>
-        </div>
+
+              <section className="product-strip">
+                <div className="product-image">
+                  {data.facts.imageUrl ? <img src={data.facts.imageUrl} alt={data.result.productInfo.name} /> : <ImageIcon size={34} />}
+                </div>
+                <div className="product-main">
+                  <div className="product-heading">
+                    <h2>{data.result.productInfo.name}</h2>
+                    <div className="product-actions">
+                      <StatusPill status={data.facts.sourceStatus} />
+                      <button className="copy-button" type="button" onClick={() => copySection("summary", productSummaryText)}>
+                        {copiedKey === "summary" ? <Check size={15} /> : <Copy size={15} />}
+                        {copiedKey === "summary" ? "已复制" : "复制概览"}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="meta-grid">
+                    <span>ASIN: {data.facts.asin || "未识别"}</span>
+                    <span>品类: {data.result.productInfo.category}</span>
+                    <span>价格: {displayPrice}</span>
+                    <span>AI: {data.usedAI ? "DeepSeek" : "降级结果"}</span>
+                  </div>
+                </div>
+              </section>
+
+              <div className="grid-two">
+                <Section
+                  title="产品信息整理"
+                  icon={<ClipboardCheck size={20} />}
+                  aside={<StatusPill status={data.facts.sourceStatus} />}
+                  copyText={productInfoText}
+                  copied={copiedKey === "product"}
+                  onCopy={(text) => copySection("product", text)}
+                >
+                  <div className="sub-block">
+                    <h3>核心功能</h3>
+                    <BulletList items={data.result.productInfo.coreFunctions} />
+                  </div>
+                  <div className="sub-block">
+                    <h3>规格参数</h3>
+                    <BulletList items={data.result.productInfo.specs} />
+                  </div>
+                </Section>
+
+                <Section
+                  title="信息来源与可信度"
+                  icon={<ShieldCheck size={20} />}
+                  copyText={trustText}
+                  copied={copiedKey === "trust"}
+                  onCopy={(text) => copySection("trust", text)}
+                >
+                  <div className={`trust-meter trust-${data.result.trust.level}`}>
+                    <strong>{data.result.trust.level.toUpperCase()}</strong>
+                    <p>{data.result.trust.summary}</p>
+                  </div>
+                  <div className="sub-block">
+                    <h3>已获取字段</h3>
+                    <TagList items={data.facts.sourceFields} tone="accent" />
+                  </div>
+                  {!!data.facts.missingFields.length && (
+                    <div className="sub-block">
+                      <h3>建议核对字段</h3>
+                      <TagList items={data.facts.missingFields} tone="risk" />
+                    </div>
+                  )}
+                </Section>
+              </div>
+
+              <Section
+                title="产品分析"
+                icon={<Target size={20} />}
+                copyText={analysisText}
+                copied={copiedKey === "analysis"}
+                onCopy={(text) => copySection("analysis", text)}
+              >
+                <div className="analysis-grid">
+                  <div>
+                    <h3>
+                      <Users size={16} />
+                      目标用户
+                    </h3>
+                    <BulletList items={data.result.analysis.targetUsers} />
+                  </div>
+                  <div>
+                    <h3>使用场景</h3>
+                    <BulletList items={data.result.analysis.scenarios} />
+                  </div>
+                  <div>
+                    <h3>用户痛点</h3>
+                    <BulletList items={data.result.analysis.painPoints} />
+                  </div>
+                  <div>
+                    <h3>核心卖点</h3>
+                    <BulletList items={data.result.analysis.sellingPoints} />
+                  </div>
+                  <div>
+                    <h3>内容切入角度</h3>
+                    <BulletList items={data.result.analysis.contentAngles} />
+                  </div>
+                  <div>
+                    <h3>购买决策点</h3>
+                    <BulletList items={data.result.analysis.purchaseDrivers} />
+                  </div>
+                </div>
+              </Section>
+
+              <div className="grid-two">
+                <Section
+                  title="短视频口播文案"
+                  icon={<MessageSquareText size={20} />}
+                  aside={<span className={scriptCount <= 150 ? "count-ok" : "count-bad"}>{scriptCount}/150</span>}
+                  copyText={needsSupplement ? undefined : scriptText}
+                  copied={copiedKey === "script"}
+                  onCopy={(text) => copySection("script", text)}
+                >
+                  {needsSupplement ? (
+                    <div className="script-placeholder">
+                      <strong>暂不生成口播</strong>
+                      <p>商品标题、卖点或规格不足时生成口播容易失真。补充商品信息并重新分析后，这里会生成可直接使用的 150 字以内短视频文案。</p>
+                      <button type="button" onClick={openManualFromWarning}>
+                        补充信息后生成
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="script-box">
+                        <p className="hook">{data.result.script.hook}</p>
+                        <p>{data.result.script.fullText}</p>
+                      </div>
+                      <div className="scene-note">
+                        <PenLine size={16} />
+                        {data.result.script.sceneSuggestion}
+                      </div>
+                    </>
+                  )}
+                </Section>
+
+                <Section
+                  title="质量检查"
+                  icon={<BadgeCheck size={20} />}
+                  copyText={qualityText}
+                  copied={copiedKey === "quality"}
+                  onCopy={(text) => copySection("quality", text)}
+                >
+                  <div className="checks">
+                    {data.result.quality.checks.map((check, index) => (
+                      <CheckRow check={check} key={`${check.label}-${index}`} />
+                    ))}
+                  </div>
+                  {!!data.result.quality.riskWarnings.length && (
+                    <div className="sub-block">
+                      <h3>风险提示</h3>
+                      <TagList items={data.result.quality.riskWarnings} tone="risk" />
+                    </div>
+                  )}
+                </Section>
+              </div>
+            </div>
+          )}
+        </>
       )}
     </main>
   );
