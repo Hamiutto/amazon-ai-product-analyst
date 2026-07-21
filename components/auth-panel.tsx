@@ -53,11 +53,11 @@ export default function AuthPanel({ onAuthenticated }: AuthPanelProps) {
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "操作失败");
 
-      setEmail("");
       setPassword("");
       setConfirmPassword("");
-      if (mode === "signup" && !payload.signedIn) {
-        setStatus("注册成功，请直接登录。");
+      if (mode === "signup") {
+        setMode("login");
+        setStatus("注册成功，请使用刚才的邮箱登录。");
         return;
       }
 

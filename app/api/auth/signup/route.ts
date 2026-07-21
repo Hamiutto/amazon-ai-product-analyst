@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getSessionCookies, signUpWithPassword, translateAuthError } from "@/lib/auth";
+import { signUpWithPassword, translateAuthError } from "@/lib/auth";
 import { getPasswordPolicyError } from "@/lib/password-policy";
 
 export const runtime = "nodejs";
@@ -28,18 +28,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "注册失败。" }, { status: 400 });
     }
 
-    const response = NextResponse.json({
+    return NextResponse.json({
       user: envelope.user,
-      signedIn: Boolean(envelope.session)
+      signedIn: false
     });
-
-    if (envelope.session) {
-      const cookies = getSessionCookies(envelope.session);
-      response.cookies.set("aa-auth-access-token", cookies.accessToken.value, cookies.accessToken.options);
-      response.cookies.set("aa-auth-refresh-token", cookies.refreshToken.value, cookies.refreshToken.options);
-    }
-
-    return response;
   } catch (error) {
     const message = error instanceof Error ? translateAuthError(error.message) : "注册失败。";
     return NextResponse.json({ error: message }, { status: 400 });

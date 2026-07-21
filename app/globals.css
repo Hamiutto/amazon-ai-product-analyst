@@ -598,6 +598,25 @@ select:focus {
   margin-bottom: 0;
 }
 
+.history-notice {
+  align-items: flex-start;
+  background: var(--rose-soft);
+  border: 1px solid rgba(190, 58, 69, 0.18);
+  border-radius: 8px;
+  color: var(--rose);
+  display: flex;
+  font-size: 12px;
+  gap: 8px;
+  line-height: 1.45;
+  margin-bottom: 10px;
+  padding: 9px 10px;
+}
+
+.history-notice svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
 .step {
   align-items: center;
   border: 1px solid var(--line);

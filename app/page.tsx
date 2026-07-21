@@ -207,6 +207,7 @@ export default function Home() {
   const [clientId, setClientId] = useState("");
   const [historyItems, setHistoryItems] = useState<AnalysisHistorySummary[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyNotice, setHistoryNotice] = useState("");
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const skipNextUrlResetRef = useRef(false);
@@ -259,6 +260,7 @@ export default function Home() {
   async function runAnalysis(manualOverride?: ManualProductInput) {
     setLoading(true);
     setError("");
+    setHistoryNotice("");
     setData(null);
 
     try {
@@ -309,13 +311,14 @@ export default function Home() {
     if (!id) return;
 
     setHistoryLoading(true);
+    setHistoryNotice("");
     try {
       const response = await fetch(`/api/history?clientId=${encodeURIComponent(id)}`);
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "读取历史记录失败");
       setHistoryItems(payload.items || []);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "读取历史记录失败");
+      setHistoryNotice(err instanceof Error ? err.message : "读取历史记录失败");
     } finally {
       setHistoryLoading(false);
     }
@@ -323,7 +326,10 @@ export default function Home() {
 
   async function saveHistory(payload: AnalyzeResponse) {
     const id = clientId || getClientId();
-    if (!id) return;
+    if (!id) {
+      setHistoryNotice("分析结果已生成，但未能生成历史记录标识。");
+      return;
+    }
     if (!clientId) setClientId(id);
 
     try {
@@ -338,9 +344,13 @@ export default function Home() {
 
       if (response.ok) {
         await loadHistory(id);
+        return;
       }
+
+      const savedPayload = await response.json().catch(() => ({} as { error?: string }));
+      setHistoryNotice(savedPayload.error || "分析结果已生成，但保存历史记录失败。");
     } catch {
-      // 分析结果已经展示成功，历史保存失败不阻断主流程。
+      setHistoryNotice("分析结果已生成，但保存历史记录失败，请检查数据库连接或表结构。");
     }
   }
 
@@ -348,7 +358,7 @@ export default function Home() {
     if (!clientId) return;
 
     setHistoryLoading(true);
-    setError("");
+    setHistoryNotice("");
     try {
       const response = await fetch(`/api/history/${itemId}?clientId=${encodeURIComponent(clientId)}`);
       const payload = (await response.json()) as {
@@ -368,7 +378,7 @@ export default function Home() {
       setShowManual(false);
       setCopiedKey("");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "读取历史详情失败");
+      setHistoryNotice(err instanceof Error ? err.message : "读取历史详情失败");
     } finally {
       setHistoryLoading(false);
     }
@@ -378,7 +388,7 @@ export default function Home() {
     if (!clientId) return;
 
     setHistoryLoading(true);
-    setError("");
+    setHistoryNotice("");
     try {
       const response = await fetch(`/api/history/${itemId}?clientId=${encodeURIComponent(clientId)}`, {
         method: "DELETE"
@@ -387,7 +397,7 @@ export default function Home() {
       if (!response.ok) throw new Error(payload.error || "删除历史记录失败");
       await loadHistory(clientId);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "删除历史记录失败");
+      setHistoryNotice(err instanceof Error ? err.message : "删除历史记录失败");
     } finally {
       setHistoryLoading(false);
     }
@@ -400,6 +410,7 @@ export default function Home() {
       setCurrentUser(null);
       setData(null);
       setError("");
+      setHistoryNotice("");
       setShowManual(false);
       setCopiedKey("");
     }
@@ -677,6 +688,13 @@ export default function Home() {
                     {historyLoading ? <Loader2 className="spin" size={15} /> : "刷新"}
                   </button>
                 </div>
+
+                {historyNotice && (
+                  <p className="history-notice">
+                    <AlertTriangle size={14} />
+                    {historyNotice}
+                  </p>
+                )}
 
                 {historyItems.length ? (
                   <div className="history-list">
