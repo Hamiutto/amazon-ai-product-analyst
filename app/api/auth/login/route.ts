@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getSessionCookies, signInWithPassword } from "@/lib/auth";
+import { getSessionCookies, signInWithPassword, translateAuthError } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
@@ -31,7 +31,7 @@ export async function POST(request: Request) {
 
     return response;
   } catch (error) {
-    const message = error instanceof Error ? error.message : "登录失败。";
+    const message = error instanceof Error ? translateAuthError(error.message) : "登录失败。";
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }

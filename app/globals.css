@@ -242,6 +242,16 @@ h1 {
   color: var(--teal);
 }
 
+.password-help {
+  background: var(--blue-soft);
+  border-radius: 8px;
+  color: var(--blue);
+  font-size: 13px;
+  line-height: 1.5;
+  margin-bottom: 0;
+  padding: 10px 12px;
+}
+
 .auth-submit {
   align-items: center;
   background: var(--ink);

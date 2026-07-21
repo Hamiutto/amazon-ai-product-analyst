@@ -20,6 +20,27 @@ type SupabaseAuthEnvelope = {
   message?: string;
 };
 
+export function translateAuthError(message: string) {
+  if (/[\u4e00-\u9fff]/.test(message)) return message;
+
+  const normalized = message.toLowerCase();
+
+  if (normalized.includes("only request this after")) {
+    const seconds = message.match(/after\s+(\d+)\s+seconds/i)?.[1];
+    return seconds ? `请求过于频繁，请 ${seconds} 秒后重试。` : "请求过于频繁，请稍后重试。";
+  }
+  if (normalized.includes("invalid login credentials")) return "邮箱或密码不正确。";
+  if (normalized.includes("email not confirmed")) return "邮箱尚未验证，请先完成邮箱验证。";
+  if (normalized.includes("user already registered") || normalized.includes("already exists")) return "该邮箱已注册，请直接登录。";
+  if (normalized.includes("password should be") || normalized.includes("weak password")) return "密码强度不足，请按页面提示重新设置。";
+  if (normalized.includes("invalid email")) return "邮箱格式不正确，请检查后重试。";
+  if (normalized.includes("signup disabled")) return "当前暂未开放注册。";
+  if (normalized.includes("rate limit")) return "请求过于频繁，请稍后重试。";
+  if (normalized.includes("缺少 supabase auth 配置")) return message;
+
+  return "认证请求失败，请稍后重试。";
+}
+
 export function getSupabaseConfig() {
   const url = process.env.SUPABASE_URL;
   const anonKey = process.env.SUPABASE_ANON_KEY;
@@ -69,7 +90,7 @@ export async function supabaseAuthRequest<T>(path: string, init: RequestInit = {
 
   if (!response.ok) {
     const message = (payload as { error?: string; msg?: string }).error || (payload as { error?: string; msg?: string }).msg || "Supabase Auth 请求失败。";
-    throw new Error(message);
+    throw new Error(translateAuthError(message));
   }
 
   return payload;

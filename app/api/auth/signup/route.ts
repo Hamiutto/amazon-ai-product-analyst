@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { getSessionCookies, signUpWithPassword } from "@/lib/auth";
+import { getSessionCookies, signUpWithPassword, translateAuthError } from "@/lib/auth";
+import { getPasswordPolicyError } from "@/lib/password-policy";
 
 export const runtime = "nodejs";
 
@@ -15,6 +16,11 @@ export async function POST(request: Request) {
 
     if (!email || !password) {
       return NextResponse.json({ error: "请输入邮箱和密码。" }, { status: 400 });
+    }
+
+    const passwordError = getPasswordPolicyError(password);
+    if (passwordError) {
+      return NextResponse.json({ error: passwordError }, { status: 400 });
     }
 
     const envelope = await signUpWithPassword(email, password);
@@ -35,7 +41,7 @@ export async function POST(request: Request) {
 
     return response;
   } catch (error) {
-    const message = error instanceof Error ? error.message : "注册失败。";
+    const message = error instanceof Error ? translateAuthError(error.message) : "注册失败。";
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }
