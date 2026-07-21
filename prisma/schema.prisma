@@ -1,0 +1,29 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model AnalysisHistory {
+  id                  String   @id @default(cuid())
+  clientId            String?
+  url                 String
+  asin                String?
+  productName         String?
+  imageUrl            String?
+  sourceStatus        String
+  usedAI              Boolean  @default(false)
+  facts               Json
+  resultSnapshot      Json
+  scriptPlainTextTemp Json?
+  scriptEncrypted     Json?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@index([clientId, createdAt])
+  @@index([asin])
+}

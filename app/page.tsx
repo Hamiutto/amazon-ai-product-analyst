@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   BadgeCheck,
@@ -8,19 +8,22 @@ import {
   ClipboardCheck,
   Copy,
   FileSearch,
+  History,
   ImageIcon,
   LinkIcon,
   Loader2,
   MessageSquareText,
   PenLine,
+  Trash2,
   ShieldCheck,
   Sparkles,
   Target,
   Users
 } from "lucide-react";
-import type { AnalyzeResponse, ManualProductInput, QualityCheck } from "@/lib/types";
+import type { AnalysisHistoryDetail, AnalysisHistorySummary, AnalyzeResponse, ManualProductInput, QualityCheck } from "@/lib/types";
 
 const sampleUrl = "https://www.amazon.com/dp/B0F6YQ96L5";
+const clientIdStorageKey = "amazon-analyst-client-id";
 const steps = ["解析链接", "获取商品信息", "生成产品分析", "质量检查"];
 const currencyOptions = [
   { value: "auto", label: "自动识别" },
@@ -166,6 +169,30 @@ function CheckRow({ check }: { check: QualityCheck }) {
   );
 }
 
+function getClientId() {
+  if (typeof window === "undefined") return "";
+
+  const existing = window.localStorage.getItem(clientIdStorageKey);
+  if (existing) return existing;
+
+  const value = window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  window.localStorage.setItem(clientIdStorageKey, value);
+  return value;
+}
+
+function formatHistoryTime(value: string) {
+  try {
+    return new Intl.DateTimeFormat("zh-CN", {
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit"
+    }).format(new Date(value));
+  } catch {
+    return value;
+  }
+}
+
 export default function Home() {
   const [url, setUrl] = useState("");
   const [showManual, setShowManual] = useState(false);
@@ -175,6 +202,10 @@ export default function Home() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [copiedKey, setCopiedKey] = useState("");
+  const [clientId, setClientId] = useState("");
+  const [historyItems, setHistoryItems] = useState<AnalysisHistorySummary[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const skipNextUrlResetRef = useRef(false);
 
   const scriptCount = useMemo(() => {
     const text = data?.result.script.fullText || "";
@@ -182,6 +213,21 @@ export default function Home() {
   }, [data]);
 
   useEffect(() => {
+    const id = getClientId();
+    setClientId(id);
+  }, []);
+
+  useEffect(() => {
+    if (!clientId) return;
+    void loadHistory(clientId);
+  }, [clientId]);
+
+  useEffect(() => {
+    if (skipNextUrlResetRef.current) {
+      skipNextUrlResetRef.current = false;
+      return;
+    }
+
     setManualDraft({});
     setManualCurrency("auto");
     setShowManual(false);
@@ -220,6 +266,7 @@ export default function Home() {
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "分析失败");
       setData(payload);
+      await saveHistory(payload);
     } catch (err) {
       setError(err instanceof Error ? err.message : "分析失败");
     } finally {
@@ -235,6 +282,94 @@ export default function Home() {
 
   async function confirmManual() {
     await runAnalysis(buildManualOverride());
+  }
+
+  async function loadHistory(id = clientId) {
+    if (!id) return;
+
+    setHistoryLoading(true);
+    try {
+      const response = await fetch(`/api/history?clientId=${encodeURIComponent(id)}`);
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "读取历史记录失败");
+      setHistoryItems(payload.items || []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "读取历史记录失败");
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
+
+  async function saveHistory(payload: AnalyzeResponse) {
+    const id = clientId || getClientId();
+    if (!id) return;
+    if (!clientId) setClientId(id);
+
+    try {
+      const response = await fetch("/api/history", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...payload,
+          clientId: id
+        })
+      });
+
+      if (response.ok) {
+        await loadHistory(id);
+      }
+    } catch {
+      // 分析结果已经展示成功，历史保存失败不阻断主流程。
+    }
+  }
+
+  async function restoreHistory(itemId: string) {
+    if (!clientId) return;
+
+    setHistoryLoading(true);
+    setError("");
+    try {
+      const response = await fetch(`/api/history/${itemId}?clientId=${encodeURIComponent(clientId)}`);
+      const payload = (await response.json()) as {
+        item?: AnalysisHistoryDetail;
+        error?: string;
+      };
+
+      if (!response.ok || !payload.item) throw new Error(payload.error || "读取历史详情失败");
+
+      skipNextUrlResetRef.current = true;
+      setUrl(payload.item.facts.url);
+      setData({
+        facts: payload.item.facts,
+        result: payload.item.result,
+        usedAI: payload.item.usedAI
+      });
+      setShowManual(false);
+      setCopiedKey("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "读取历史详情失败");
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
+
+  async function removeHistory(itemId: string) {
+    if (!clientId) return;
+
+    setHistoryLoading(true);
+    setError("");
+    try {
+      const response = await fetch(`/api/history/${itemId}?clientId=${encodeURIComponent(clientId)}`, {
+        method: "DELETE"
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "删除历史记录失败");
+      await loadHistory(clientId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "删除历史记录失败");
+    } finally {
+      setHistoryLoading(false);
+    }
   }
 
   function buildManualOverride() {
@@ -455,13 +590,45 @@ export default function Home() {
           )}
         </form>
 
-        <div className="process-panel">
-          {steps.map((step, index) => (
-            <div className={`step ${loading && index < 3 ? "active" : data ? "done" : ""}`} key={step}>
-              <span>{index + 1}</span>
-              {step}
+        <div className="side-rail">
+          <div className="process-panel">
+            {steps.map((step, index) => (
+              <div className={`step ${loading && index < 3 ? "active" : data ? "done" : ""}`} key={step}>
+                <span>{index + 1}</span>
+                {step}
+              </div>
+            ))}
+          </div>
+
+          <aside className="history-panel">
+            <div className="history-title">
+              <div>
+                <History size={18} />
+                <h2>最近历史</h2>
+              </div>
+              <button type="button" onClick={() => loadHistory()} disabled={historyLoading || !clientId}>
+                {historyLoading ? <Loader2 className="spin" size={15} /> : "刷新"}
+              </button>
             </div>
-          ))}
+
+            {historyItems.length ? (
+              <div className="history-list">
+                {historyItems.map((item) => (
+                  <div className="history-item" key={item.id}>
+                    <button type="button" onClick={() => restoreHistory(item.id)}>
+                      <strong>{item.productName || item.asin || "未命名商品"}</strong>
+                      <span>{formatHistoryTime(item.createdAt)} · {item.usedAI ? "AI" : "降级"}</span>
+                    </button>
+                    <button className="icon-button" type="button" onClick={() => removeHistory(item.id)} aria-label="删除历史记录">
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="history-empty">{historyLoading ? "读取历史中..." : "完成一次分析后会自动保存。"}</p>
+            )}
+          </aside>
         </div>
       </section>
 

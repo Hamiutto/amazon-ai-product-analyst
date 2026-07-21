@@ -71,3 +71,24 @@ export type AnalyzeResponse = {
   result: ProductAnalysisResult;
   usedAI: boolean;
 };
+
+export type AnalysisHistorySummary = {
+  id: string;
+  clientId: string | null;
+  url: string;
+  asin: string | null;
+  productName: string | null;
+  imageUrl: string | null;
+  sourceStatus: string;
+  usedAI: boolean;
+  createdAt: string;
+};
+
+export type AnalysisHistoryDetail = {
+  id: string;
+  clientId: string | null;
+  createdAt: string;
+  facts: ProductFacts;
+  result: ProductAnalysisResult;
+  usedAI: boolean;
+};
