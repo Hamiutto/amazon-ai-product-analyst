@@ -1,4 +1,4 @@
-import { prisma } from "./prisma";
+import { getPrismaClient } from "./prisma";
 import { Prisma } from "@prisma/client";
 import type { AnalyzeResponse, ProductAnalysisResult } from "./types";
 
@@ -27,6 +27,7 @@ function rehydrateResult(snapshot: unknown, script: unknown): ProductAnalysisRes
 }
 
 export async function createAnalysisHistory(input: CreateAnalysisHistoryInput) {
+  const prisma = getPrismaClient();
   const productName = input.result.productInfo.name || input.facts.title || input.facts.asin || null;
 
   return prisma.analysisHistory.create({
@@ -57,6 +58,8 @@ export async function createAnalysisHistory(input: CreateAnalysisHistoryInput) {
 }
 
 export async function listAnalysisHistory(clientId?: string) {
+  const prisma = getPrismaClient();
+
   return prisma.analysisHistory.findMany({
     where: clientId ? { clientId } : undefined,
     orderBy: { createdAt: "desc" },
@@ -76,6 +79,8 @@ export async function listAnalysisHistory(clientId?: string) {
 }
 
 export async function getAnalysisHistory(id: string, clientId?: string) {
+  const prisma = getPrismaClient();
+
   const item = await prisma.analysisHistory.findFirst({
     where: {
       id,
@@ -96,6 +101,8 @@ export async function getAnalysisHistory(id: string, clientId?: string) {
 }
 
 export async function deleteAnalysisHistory(id: string, clientId?: string) {
+  const prisma = getPrismaClient();
+
   const item = await prisma.analysisHistory.findFirst({
     where: {
       id,
