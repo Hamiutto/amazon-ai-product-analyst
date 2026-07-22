@@ -5,6 +5,7 @@ import {
   parseCookieHeader,
   refreshAuthSession
 } from "@/lib/auth";
+import { setCsrfCookie } from "@/lib/request-guard";
 import { ensureUserProfile } from "@/lib/user-profile";
 
 export const runtime = "nodejs";
@@ -24,7 +25,9 @@ export async function GET(request: Request) {
       try {
         const user = await getUserByAccessToken(accessToken);
         const profile = await ensureUserProfile(user);
-        return NextResponse.json({ user: { ...user, credits: profile.credits } });
+        const response = NextResponse.json({ user: { ...user, credits: profile.credits } });
+        setCsrfCookie(response);
+        return response;
       } catch {
         // fall through to refresh
       }
@@ -49,6 +52,7 @@ export async function GET(request: Request) {
           path: "/",
           maxAge: 60 * 60 * 24 * 30
         });
+        setCsrfCookie(response);
         return response;
       }
     }

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { AUTH_COOKIE_NAMES, getUserByAccessToken, parseCookieHeader } from "@/lib/auth";
 import { createAnalysisHistory, listAnalysisHistory } from "@/lib/history";
+import { verifyWriteRequest } from "@/lib/request-guard";
 import type { AnalyzeResponse } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -47,6 +48,9 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const guard = verifyWriteRequest(request);
+    if (guard) return guard;
+
     const body = (await request.json()) as Partial<AnalyzeResponse> & {
       clientId?: string;
     };

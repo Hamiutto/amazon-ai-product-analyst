@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { AUTH_COOKIE_NAMES, getUserByAccessToken, parseCookieHeader } from "@/lib/auth";
 import { deleteAnalysisHistory, getAnalysisHistory } from "@/lib/history";
+import { verifyWriteRequest } from "@/lib/request-guard";
 
 export const runtime = "nodejs";
 
@@ -58,6 +59,9 @@ export async function GET(request: Request, { params }: Params) {
 
 export async function DELETE(request: Request, { params }: Params) {
   try {
+    const guard = verifyWriteRequest(request);
+    if (guard) return guard;
+
     const deleted = await deleteAnalysisHistory(params.id, await historyOwner(request));
 
     if (!deleted) {

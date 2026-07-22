@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { AlertTriangle, ArrowLeft, Check, Copy, History, Loader2, Trash2 } from "lucide-react";
+import { getCsrfHeaders } from "@/lib/client-security";
 import type { AnalysisHistoryDetail, AnalysisHistorySummary, AuthUser } from "@/lib/types";
 
 const clientIdStorageKey = "amazon-analyst-client-id";
@@ -94,6 +95,7 @@ export default function HistoryPage() {
       const suffix = clientId ? `?clientId=${encodeURIComponent(clientId)}` : "";
       const response = await fetch(`/api/history/${itemId}${suffix}`, {
         method: "DELETE",
+        headers: getCsrfHeaders(),
         credentials: "include"
       });
       const payload = await response.json();

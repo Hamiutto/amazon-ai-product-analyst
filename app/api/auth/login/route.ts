@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSessionCookies, signInWithPassword, translateAuthError } from "@/lib/auth";
+import { setCsrfCookie } from "@/lib/request-guard";
 import { ensureUserProfile } from "@/lib/user-profile";
 
 export const runtime = "nodejs";
@@ -29,6 +30,7 @@ export async function POST(request: Request) {
       const cookies = getSessionCookies(envelope.session);
       response.cookies.set("aa-auth-access-token", cookies.accessToken.value, cookies.accessToken.options);
       response.cookies.set("aa-auth-refresh-token", cookies.refreshToken.value, cookies.refreshToken.options);
+      setCsrfCookie(response);
     }
 
     return response;

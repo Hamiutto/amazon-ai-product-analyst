@@ -2,7 +2,8 @@ import type { AuthUser } from "./types";
 
 export const AUTH_COOKIE_NAMES = {
   accessToken: "aa-auth-access-token",
-  refreshToken: "aa-auth-refresh-token"
+  refreshToken: "aa-auth-refresh-token",
+  csrfToken: "aa-csrf-token"
 } as const;
 
 export type AuthSession = {

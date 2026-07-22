@@ -5,6 +5,7 @@ import { analyzeWithDeepSeek } from "@/lib/deepseek";
 import { createAnalysisHistory } from "@/lib/history";
 import { getPrismaClient } from "@/lib/prisma";
 import { ManualProductInput } from "@/lib/types";
+import { verifyWriteRequest } from "@/lib/request-guard";
 import { analysisCreditCost, ensureUserProfile } from "@/lib/user-profile";
 import { isBillableAnalysis } from "@/lib/analysis-validator";
 
@@ -18,6 +19,9 @@ async function getCurrentUser(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const guard = verifyWriteRequest(request);
+    if (guard) return guard;
+
     const user = await getCurrentUser(request);
     if (!user) {
       return NextResponse.json({ error: "请先登录后再分析。" }, { status: 401 });

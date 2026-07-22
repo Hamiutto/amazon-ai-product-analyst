@@ -23,6 +23,7 @@ import {
   Users
 } from "lucide-react";
 import AuthPanel from "@/components/auth-panel";
+import { getCsrfHeaders } from "@/lib/client-security";
 import type { AnalysisHistoryDetail, AnalysisHistorySummary, AnalyzeResponse, AuthUser, ManualProductInput, QualityCheck } from "@/lib/types";
 
 const sampleUrl = "https://www.amazon.com/dp/B0F6YQ96L5";
@@ -274,7 +275,7 @@ export default function Home() {
     try {
       const response = await fetch("/api/analyze", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...getCsrfHeaders() },
         credentials: 'include',
         body: JSON.stringify({
           url,
@@ -386,6 +387,7 @@ export default function Home() {
     try {
       const response = await fetch(`/api/history/${itemId}?clientId=${encodeURIComponent(clientId)}`, {
         method: "DELETE",
+        headers: getCsrfHeaders(),
         credentials: 'include'
       });
       const payload = await response.json();
@@ -402,6 +404,7 @@ export default function Home() {
     try {
       await fetch("/api/auth/logout", { 
         method: "POST",
+        headers: getCsrfHeaders(),
         credentials: 'include'
       });
     } finally {
