@@ -70,10 +70,13 @@ export type AnalyzeResponse = {
   facts: ProductFacts;
   result: ProductAnalysisResult;
   usedAI: boolean;
+  historyId?: string;
+  credits?: number;
 };
 
 export type AnalysisHistorySummary = {
   id: string;
+  userId: string | null;
   clientId: string | null;
   url: string;
   asin: string | null;
@@ -86,6 +89,7 @@ export type AnalysisHistorySummary = {
 
 export type AnalysisHistoryDetail = {
   id: string;
+  userId: string | null;
   clientId: string | null;
   createdAt: string;
   facts: ProductFacts;
@@ -96,4 +100,5 @@ export type AnalysisHistoryDetail = {
 export type AuthUser = {
   id: string;
   email: string | null;
+  credits?: number;
 };

@@ -258,6 +258,13 @@ export default function Home() {
   }, [showManual, data]);
 
   async function runAnalysis(manualOverride?: ManualProductInput) {
+    const id = clientId || getClientId();
+    if (!id) {
+      setError("未能生成历史记录标识，请刷新页面后重试。");
+      return;
+    }
+    if (!clientId) setClientId(id);
+
     setLoading(true);
     setError("");
     setHistoryNotice("");
@@ -269,14 +276,18 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           url,
-          manual: manualOverride
+          manual: manualOverride,
+          clientId: id
         })
       });
 
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "分析失败");
       setData(payload);
-      await saveHistory(payload);
+      if (typeof payload.credits === "number") {
+        setCurrentUser((current) => (current ? { ...current, credits: payload.credits } : current));
+      }
+      await loadHistory(id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "分析失败");
     } finally {
@@ -321,36 +332,6 @@ export default function Home() {
       setHistoryNotice(err instanceof Error ? err.message : "读取历史记录失败");
     } finally {
       setHistoryLoading(false);
-    }
-  }
-
-  async function saveHistory(payload: AnalyzeResponse) {
-    const id = clientId || getClientId();
-    if (!id) {
-      setHistoryNotice("分析结果已生成，但未能生成历史记录标识。");
-      return;
-    }
-    if (!clientId) setClientId(id);
-
-    try {
-      const response = await fetch("/api/history", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...payload,
-          clientId: id
-        })
-      });
-
-      if (response.ok) {
-        await loadHistory(id);
-        return;
-      }
-
-      const savedPayload = await response.json().catch(() => ({} as { error?: string }));
-      setHistoryNotice(savedPayload.error || "分析结果已生成，但保存历史记录失败。");
-    } catch {
-      setHistoryNotice("分析结果已生成，但保存历史记录失败，请检查数据库连接或表结构。");
     }
   }
 
@@ -514,6 +495,8 @@ export default function Home() {
     ? data.facts.sourceStatus !== "manual" &&
       (data.result.trust.level === "low" || data.facts.sourceFields.length < 3 || data.facts.missingFields.length >= 4)
     : false;
+  const credits = currentUser?.credits;
+  const hasCredits = typeof credits !== "number" || credits > 0;
 
   function openManualFromWarning() {
     if (!data) return;
@@ -553,6 +536,7 @@ export default function Home() {
               <ShieldCheck size={18} />
               {currentUser.email || currentUser.id}
             </div>
+            <div className="topbar-badge credit-badge">积分 {typeof credits === "number" ? credits : "--"}</div>
             <button className="logout-button" type="button" onClick={logout}>
               <LogOut size={16} />
               退出
@@ -582,9 +566,9 @@ export default function Home() {
                   placeholder={sampleUrl}
                   required
                 />
-                <button disabled={loading} type="submit">
+                <button disabled={loading || !hasCredits} type="submit">
                   {loading ? <Loader2 className="spin" size={18} /> : <Sparkles size={18} />}
-                  {loading ? "分析中" : showManual && data ? "重新分析" : "开始分析"}
+                  {loading ? "分析中" : !hasCredits ? "积分不足" : showManual && data ? "重新分析" : "开始分析"}
                 </button>
               </div>
 
@@ -592,6 +576,7 @@ export default function Home() {
                 <button className="ghost-button" type="button" onClick={() => setUrl(sampleUrl)}>
                   填入示例
                 </button>
+                <span className="credit-hint">每次成功分析扣 1 积分，当前剩余 {typeof credits === "number" ? credits : "--"}</span>
                 <label className="toggle">
                   <input checked={showManual} onChange={(event) => setShowManual(event.target.checked)} type="checkbox" />
                   <span>人工补充模式</span>
@@ -660,8 +645,8 @@ export default function Home() {
                   </div>
 
                   <div className="manual-actions">
-                    <button className="confirm-button" type="button" disabled={loading || !url} onClick={confirmManual}>
-                      {loading ? "重新分析中" : data ? "确认补充并重新分析" : "确认并开始分析"}
+                    <button className="confirm-button" type="button" disabled={loading || !url || !hasCredits} onClick={confirmManual}>
+                      {loading ? "重新分析中" : !hasCredits ? "积分不足" : data ? "确认补充并重新分析" : "确认并开始分析"}
                     </button>
                   </div>
                 </>

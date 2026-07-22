@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSessionCookies, signInWithPassword, translateAuthError } from "@/lib/auth";
+import { ensureUserProfile } from "@/lib/user-profile";
 
 export const runtime = "nodejs";
 
@@ -22,7 +23,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "登录失败。" }, { status: 400 });
     }
 
-    const response = NextResponse.json({ user: envelope.user });
+    const profile = await ensureUserProfile(envelope.user);
+    const response = NextResponse.json({ user: { ...envelope.user, credits: profile.credits } });
     if (envelope.session) {
       const cookies = getSessionCookies(envelope.session);
       response.cookies.set("aa-auth-access-token", cookies.accessToken.value, cookies.accessToken.options);

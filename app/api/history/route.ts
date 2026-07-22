@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { AUTH_COOKIE_NAMES, getUserByAccessToken, parseCookieHeader } from "@/lib/auth";
 import { createAnalysisHistory, listAnalysisHistory } from "@/lib/history";
 import type { AnalyzeResponse } from "@/lib/types";
 
@@ -16,11 +17,25 @@ function historyError(message: string, error: unknown) {
   return NextResponse.json({ error: `${message}${suffix}` }, { status: 500 });
 }
 
+async function historyOwner(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const clientId = searchParams.get("clientId") || undefined;
+  const accessToken = parseCookieHeader(request.headers.get("cookie"), AUTH_COOKIE_NAMES.accessToken);
+  if (accessToken) {
+    try {
+      const user = await getUserByAccessToken(accessToken);
+      return { userId: user.id, clientId };
+    } catch {
+      // fall back to clientId compatibility
+    }
+  }
+
+  return { clientId };
+}
+
 export async function GET(request: Request) {
   try {
-    const { searchParams } = new URL(request.url);
-    const clientId = searchParams.get("clientId") || undefined;
-    const items = await listAnalysisHistory(clientId);
+    const items = await listAnalysisHistory(await historyOwner(request));
 
     return NextResponse.json({ items });
   } catch (error) {
@@ -39,6 +54,7 @@ export async function POST(request: Request) {
     }
 
     const item = await createAnalysisHistory({
+      userId: (await historyOwner(request)).userId,
       clientId: body.clientId,
       facts: body.facts,
       result: body.result,

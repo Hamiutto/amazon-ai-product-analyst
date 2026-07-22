@@ -5,6 +5,7 @@ import {
   parseCookieHeader,
   refreshAuthSession
 } from "@/lib/auth";
+import { ensureUserProfile } from "@/lib/user-profile";
 
 export const runtime = "nodejs";
 
@@ -22,7 +23,8 @@ export async function GET(request: Request) {
     if (accessToken) {
       try {
         const user = await getUserByAccessToken(accessToken);
-        return NextResponse.json({ user });
+        const profile = await ensureUserProfile(user);
+        return NextResponse.json({ user: { ...user, credits: profile.credits } });
       } catch {
         // fall through to refresh
       }
@@ -31,7 +33,8 @@ export async function GET(request: Request) {
     if (refreshToken) {
       const refreshed = await refreshAuthSession(refreshToken);
       if (refreshed.session?.user) {
-        const response = NextResponse.json({ user: refreshed.session.user });
+        const profile = await ensureUserProfile(refreshed.session.user);
+        const response = NextResponse.json({ user: { ...refreshed.session.user, credits: profile.credits } });
         response.cookies.set(AUTH_COOKIE_NAMES.accessToken, refreshed.session.access_token, {
           httpOnly: true,
           sameSite: "lax",

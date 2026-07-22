@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { AUTH_COOKIE_NAMES, getUserByAccessToken, parseCookieHeader } from "@/lib/auth";
 import { deleteAnalysisHistory, getAnalysisHistory } from "@/lib/history";
 
 export const runtime = "nodejs";
@@ -26,9 +27,24 @@ function clientIdFromRequest(request: Request) {
   return searchParams.get("clientId") || undefined;
 }
 
+async function historyOwner(request: Request) {
+  const clientId = clientIdFromRequest(request);
+  const accessToken = parseCookieHeader(request.headers.get("cookie"), AUTH_COOKIE_NAMES.accessToken);
+  if (accessToken) {
+    try {
+      const user = await getUserByAccessToken(accessToken);
+      return { userId: user.id, clientId };
+    } catch {
+      // fall back to clientId compatibility
+    }
+  }
+
+  return { clientId };
+}
+
 export async function GET(request: Request, { params }: Params) {
   try {
-    const item = await getAnalysisHistory(params.id, clientIdFromRequest(request));
+    const item = await getAnalysisHistory(params.id, await historyOwner(request));
 
     if (!item) {
       return NextResponse.json({ error: "历史记录不存在。" }, { status: 404 });
@@ -42,7 +58,7 @@ export async function GET(request: Request, { params }: Params) {
 
 export async function DELETE(request: Request, { params }: Params) {
   try {
-    const deleted = await deleteAnalysisHistory(params.id, clientIdFromRequest(request));
+    const deleted = await deleteAnalysisHistory(params.id, await historyOwner(request));
 
     if (!deleted) {
       return NextResponse.json({ error: "历史记录不存在。" }, { status: 404 });

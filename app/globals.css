@@ -102,6 +102,12 @@ h1 {
   color: var(--teal);
 }
 
+.credit-badge {
+  background: var(--amber-soft);
+  border-color: rgba(183, 121, 31, 0.22);
+  color: var(--amber);
+}
+
 .topbar-user {
   align-items: center;
   display: flex;
@@ -377,6 +383,12 @@ select:focus {
   gap: 12px;
   justify-content: space-between;
   margin-top: 12px;
+}
+
+.credit-hint {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .ghost-button {

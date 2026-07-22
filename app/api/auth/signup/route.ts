@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { signUpWithPassword, translateAuthError } from "@/lib/auth";
 import { getPasswordPolicyError } from "@/lib/password-policy";
+import { ensureUserProfile } from "@/lib/user-profile";
 
 export const runtime = "nodejs";
 
@@ -27,6 +28,8 @@ export async function POST(request: Request) {
     if (!envelope.user) {
       return NextResponse.json({ error: "注册失败。" }, { status: 400 });
     }
+
+    await ensureUserProfile(envelope.user);
 
     return NextResponse.json({
       user: envelope.user,

@@ -3,8 +3,32 @@ import { Prisma } from "@prisma/client";
 import type { AnalyzeResponse, ProductAnalysisResult } from "./types";
 
 export type CreateAnalysisHistoryInput = AnalyzeResponse & {
+  userId?: string;
   clientId?: string;
 };
+
+type HistoryOwner = {
+  userId?: string;
+  clientId?: string;
+};
+
+function ownerWhere(owner: HistoryOwner) {
+  if (owner.userId && owner.clientId) {
+    return {
+      OR: [
+        { userId: owner.userId },
+        {
+          userId: null,
+          clientId: owner.clientId
+        }
+      ]
+    };
+  }
+
+  if (owner.userId) return { userId: owner.userId };
+  if (owner.clientId) return { clientId: owner.clientId };
+  return undefined;
+}
 
 function resultSnapshotWithoutScript(result: ProductAnalysisResult) {
   const { script: _script, ...snapshot } = result;
@@ -26,12 +50,12 @@ function rehydrateResult(snapshot: unknown, script: unknown): ProductAnalysisRes
   };
 }
 
-export async function createAnalysisHistory(input: CreateAnalysisHistoryInput) {
-  const prisma = getPrismaClient();
+export async function createAnalysisHistory(input: CreateAnalysisHistoryInput, prisma: Prisma.TransactionClient = getPrismaClient()) {
   const productName = input.result.productInfo.name || input.facts.title || input.facts.asin || null;
 
   return prisma.analysisHistory.create({
     data: {
+      userId: input.userId || null,
       clientId: input.clientId || null,
       url: input.facts.url,
       asin: input.facts.asin || null,
@@ -45,6 +69,7 @@ export async function createAnalysisHistory(input: CreateAnalysisHistoryInput) {
     },
     select: {
       id: true,
+      userId: true,
       clientId: true,
       url: true,
       asin: true,
@@ -57,15 +82,16 @@ export async function createAnalysisHistory(input: CreateAnalysisHistoryInput) {
   });
 }
 
-export async function listAnalysisHistory(clientId?: string) {
+export async function listAnalysisHistory(owner: HistoryOwner = {}) {
   const prisma = getPrismaClient();
 
   return prisma.analysisHistory.findMany({
-    where: clientId ? { clientId } : undefined,
+    where: ownerWhere(owner),
     orderBy: { createdAt: "desc" },
     take: 20,
     select: {
       id: true,
+      userId: true,
       clientId: true,
       url: true,
       asin: true,
@@ -78,13 +104,13 @@ export async function listAnalysisHistory(clientId?: string) {
   });
 }
 
-export async function getAnalysisHistory(id: string, clientId?: string) {
+export async function getAnalysisHistory(id: string, owner: HistoryOwner = {}) {
   const prisma = getPrismaClient();
 
   const item = await prisma.analysisHistory.findFirst({
     where: {
       id,
-      ...(clientId ? { clientId } : {})
+      ...ownerWhere(owner)
     }
   });
 
@@ -92,6 +118,7 @@ export async function getAnalysisHistory(id: string, clientId?: string) {
 
   return {
     id: item.id,
+    userId: item.userId,
     clientId: item.clientId,
     createdAt: item.createdAt,
     facts: item.facts,
@@ -100,13 +127,13 @@ export async function getAnalysisHistory(id: string, clientId?: string) {
   };
 }
 
-export async function deleteAnalysisHistory(id: string, clientId?: string) {
+export async function deleteAnalysisHistory(id: string, owner: HistoryOwner = {}) {
   const prisma = getPrismaClient();
 
   const item = await prisma.analysisHistory.findFirst({
     where: {
       id,
-      ...(clientId ? { clientId } : {})
+      ...ownerWhere(owner)
     },
     select: { id: true }
   });

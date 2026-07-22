@@ -10,6 +10,7 @@ datasource db {
 
 model AnalysisHistory {
   id                  String   @id @default(cuid())
+  userId              String?
   clientId            String?
   url                 String
   asin                String?
@@ -23,7 +24,31 @@ model AnalysisHistory {
   scriptEncrypted     Json?
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
+  user                UserProfile? @relation(fields: [userId], references: [userId], onDelete: Cascade)
 
+  @@index([userId, createdAt])
   @@index([clientId, createdAt])
   @@index([asin])
+}
+
+model UserProfile {
+  userId        String            @id
+  email         String?
+  credits       Int               @default(10)
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  histories     AnalysisHistory[]
+  creditLedgers CreditLedger[]
+}
+
+model CreditLedger {
+  id                String      @id @default(cuid())
+  userId            String
+  amount            Int
+  reason            String
+  analysisHistoryId String?
+  createdAt         DateTime    @default(now())
+  user              UserProfile @relation(fields: [userId], references: [userId], onDelete: Cascade)
+
+  @@index([userId, createdAt])
 }
