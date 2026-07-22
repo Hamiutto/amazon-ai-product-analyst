@@ -274,6 +274,7 @@ export default function Home() {
       const response = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: 'include',
         body: JSON.stringify({
           url,
           manual: manualOverride,
@@ -298,7 +299,10 @@ export default function Home() {
   async function loadCurrentUser() {
     setAuthLoading(true);
     try {
-      const response = await fetch("/api/auth/me", { cache: "no-store" });
+      const response = await fetch("/api/auth/me", { 
+        cache: "no-store",
+        credentials: 'include'
+      });
       const payload = (await response.json()) as { user?: AuthUser | null };
       setCurrentUser(payload.user || null);
     } catch {
@@ -324,7 +328,9 @@ export default function Home() {
     setHistoryLoading(true);
     setHistoryNotice("");
     try {
-      const response = await fetch(`/api/history?clientId=${encodeURIComponent(id)}`);
+      const response = await fetch(`/api/history?clientId=${encodeURIComponent(id)}`, {
+        credentials: 'include'
+      });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "读取历史记录失败");
       setHistoryItems(payload.items || []);
@@ -341,7 +347,9 @@ export default function Home() {
     setHistoryLoading(true);
     setHistoryNotice("");
     try {
-      const response = await fetch(`/api/history/${itemId}?clientId=${encodeURIComponent(clientId)}`);
+      const response = await fetch(`/api/history/${itemId}?clientId=${encodeURIComponent(clientId)}`, {
+        credentials: 'include'
+      });
       const payload = (await response.json()) as {
         item?: AnalysisHistoryDetail;
         error?: string;
@@ -372,7 +380,8 @@ export default function Home() {
     setHistoryNotice("");
     try {
       const response = await fetch(`/api/history/${itemId}?clientId=${encodeURIComponent(clientId)}`, {
-        method: "DELETE"
+        method: "DELETE",
+        credentials: 'include'
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "删除历史记录失败");
@@ -386,7 +395,10 @@ export default function Home() {
 
   async function logout() {
     try {
-      await fetch("/api/auth/logout", { method: "POST" });
+      await fetch("/api/auth/logout", { 
+        method: "POST",
+        credentials: 'include'
+      });
     } finally {
       setCurrentUser(null);
       setData(null);
