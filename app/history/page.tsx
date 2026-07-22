@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { AlertTriangle, ArrowLeft, History, Loader2, Trash2 } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Check, Copy, History, Loader2, Trash2 } from "lucide-react";
 import type { AnalysisHistoryDetail, AnalysisHistorySummary, AuthUser } from "@/lib/types";
 
 const clientIdStorageKey = "amazon-analyst-client-id";
@@ -32,6 +32,7 @@ export default function HistoryPage() {
   const [loading, setLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(false);
   const [error, setError] = useState("");
+  const [copiedKey, setCopiedKey] = useState("");
   const [clientId, setClientId] = useState("");
 
   useEffect(() => {
@@ -79,6 +80,7 @@ export default function HistoryPage() {
       const payload = (await response.json()) as { item?: AnalysisHistoryDetail; error?: string };
       if (!response.ok || !payload.item) throw new Error(payload.error || "读取历史详情失败");
       setSelected(payload.item);
+      setCopiedKey("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "读取历史详情失败");
     } finally {
@@ -102,6 +104,51 @@ export default function HistoryPage() {
       setError(err instanceof Error ? err.message : "删除历史记录失败");
     }
   }
+
+  async function copySection(key: string, text: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedKey(key);
+      window.setTimeout(() => setCopiedKey(""), 1400);
+    } catch {
+      setError("复制失败，请手动选择文本复制。");
+    }
+  }
+
+  const productText = selected
+    ? [
+        "产品信息整理",
+        `名称：${selected.result.productInfo.name}`,
+        `ASIN：${selected.facts.asin || "未识别"}`,
+        `品类：${selected.result.productInfo.category}`,
+        `价格：${selected.result.productInfo.price || "未提供"}`,
+        "",
+        "核心卖点：",
+        ...selected.result.analysis.sellingPoints.map((item) => `- ${item}`)
+      ].join("\n")
+    : "";
+  const scriptText = selected
+    ? ["短视频口播文案", `钩子：${selected.result.script.hook}`, "", selected.result.script.fullText, "", `拍摄建议：${selected.result.script.sceneSuggestion}`].join("\n")
+    : "";
+  const markdownText = selected
+    ? [
+        `# ${selected.result.productInfo.name || selected.facts.asin || "产品分析"}`,
+        "",
+        `- ASIN: ${selected.facts.asin || "未识别"}`,
+        `- 品类: ${selected.result.productInfo.category}`,
+        `- 价格: ${selected.result.productInfo.price || "未提供"}`,
+        `- AI: ${selected.usedAI ? "DeepSeek" : "降级结果"}`,
+        "",
+        "## 核心卖点",
+        ...selected.result.analysis.sellingPoints.map((item) => `- ${item}`),
+        "",
+        "## 口播文案",
+        selected.result.script.fullText,
+        "",
+        "## 拍摄建议",
+        selected.result.script.sceneSuggestion
+      ].join("\n")
+    : "";
 
   return (
     <main className="workspace">
@@ -166,6 +213,20 @@ export default function HistoryPage() {
                 <div>
                   <History size={20} />
                   <h2>{selected.result.productInfo.name || selected.facts.asin || "历史详情"}</h2>
+                </div>
+                <div className="section-actions">
+                  <button className="copy-button" type="button" onClick={() => copySection("product", productText)}>
+                    {copiedKey === "product" ? <Check size={15} /> : <Copy size={15} />}
+                    {copiedKey === "product" ? "已复制" : "产品信息"}
+                  </button>
+                  <button className="copy-button" type="button" onClick={() => copySection("script", scriptText)}>
+                    {copiedKey === "script" ? <Check size={15} /> : <Copy size={15} />}
+                    {copiedKey === "script" ? "已复制" : "口播"}
+                  </button>
+                  <button className="copy-button" type="button" onClick={() => copySection("markdown", markdownText)}>
+                    {copiedKey === "markdown" ? <Check size={15} /> : <Copy size={15} />}
+                    {copiedKey === "markdown" ? "已复制" : "Markdown"}
+                  </button>
                 </div>
               </div>
               <div className="history-detail-grid">
