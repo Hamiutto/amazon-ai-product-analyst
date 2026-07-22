@@ -13,18 +13,6 @@ type HistoryOwner = {
 };
 
 function ownerWhere(owner: HistoryOwner) {
-  if (owner.userId && owner.clientId) {
-    return {
-      OR: [
-        { userId: owner.userId },
-        {
-          userId: null,
-          clientId: owner.clientId
-        }
-      ]
-    };
-  }
-
   if (owner.userId) return { userId: owner.userId };
   if (owner.clientId) return { clientId: owner.clientId };
   return undefined;
@@ -82,13 +70,13 @@ export async function createAnalysisHistory(input: CreateAnalysisHistoryInput, p
   });
 }
 
-export async function listAnalysisHistory(owner: HistoryOwner = {}) {
+export async function listAnalysisHistory(owner: HistoryOwner = {}, take = 20) {
   const prisma = getPrismaClient();
 
   return prisma.analysisHistory.findMany({
     where: ownerWhere(owner),
     orderBy: { createdAt: "desc" },
-    take: 20,
+    take,
     select: {
       id: true,
       userId: true,

@@ -24,7 +24,7 @@ async function historyOwner(request: Request) {
   if (accessToken) {
     try {
       const user = await getUserByAccessToken(accessToken);
-      return { userId: user.id, clientId };
+      return { userId: user.id };
     } catch {
       // fall back to clientId compatibility
     }
@@ -35,7 +35,9 @@ async function historyOwner(request: Request) {
 
 export async function GET(request: Request) {
   try {
-    const items = await listAnalysisHistory(await historyOwner(request));
+    const { searchParams } = new URL(request.url);
+    const limit = Math.min(Math.max(Number(searchParams.get("limit") || 20), 1), 50);
+    const items = await listAnalysisHistory(await historyOwner(request), limit);
 
     return NextResponse.json({ items });
   } catch (error) {

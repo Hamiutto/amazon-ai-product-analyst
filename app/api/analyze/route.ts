@@ -6,6 +6,7 @@ import { createAnalysisHistory } from "@/lib/history";
 import { getPrismaClient } from "@/lib/prisma";
 import { ManualProductInput } from "@/lib/types";
 import { analysisCreditCost, ensureUserProfile } from "@/lib/user-profile";
+import { isBillableAnalysis } from "@/lib/analysis-validator";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -39,65 +40,84 @@ export async function POST(request: Request) {
 
     const facts = await extractAmazonFacts(body.url, body.manual);
     const { result, usedAI } = await analyzeWithDeepSeek(facts);
+
+    // 构建完整的分析响应
+    const analysisResponse = { facts, result, usedAI };
+
+    // 判断是否可计费
+    const isBillable = isBillableAnalysis(analysisResponse);
+
     const prisma = getPrismaClient();
+    let historyId = null;
+    let updatedCredits = profile.credits;
 
-    const saved = await prisma.$transaction(async (tx) => {
-      await ensureUserProfile(user, tx);
+    if (isBillable) {
+      // 可计费分析：保存历史并扣积分
+      const saved = await prisma.$transaction(async (tx) => {
+        await ensureUserProfile(user, tx);
 
-      const history = await createAnalysisHistory(
-        {
-          userId: user.id,
-          clientId: body.clientId,
-          facts,
-          result,
-          usedAI
-        },
-        tx
-      );
+        const history = await createAnalysisHistory(
+          {
+            userId: user.id,
+            clientId: body.clientId,
+            facts,
+            result,
+            usedAI
+          },
+          tx
+        );
 
-      const debit = await tx.userProfile.updateMany({
-        where: {
-          userId: user.id,
-          credits: {
-            gte: analysisCreditCost
+        const debit = await tx.userProfile.updateMany({
+          where: {
+            userId: user.id,
+            credits: {
+              gte: analysisCreditCost
+            }
+          },
+          data: {
+            credits: {
+              decrement: analysisCreditCost
+            }
           }
-        },
-        data: {
-          credits: {
-            decrement: analysisCreditCost
+        });
+
+        if (debit.count !== 1) {
+          throw new Error("积分不足，无法保存分析结果。");
+        }
+
+        const nextProfile = await tx.userProfile.findUniqueOrThrow({
+          where: { userId: user.id }
+        });
+
+        await tx.creditLedger.create({
+          data: {
+            userId: user.id,
+            amount: -analysisCreditCost,
+            reason: "analysis",
+            analysisHistoryId: history.id
           }
-        }
+        });
+
+        return {
+          history,
+          profile: nextProfile
+        };
       });
 
-      if (debit.count !== 1) {
-        throw new Error("积分不足，无法保存分析结果。");
-      }
-
-      const nextProfile = await tx.userProfile.findUniqueOrThrow({
-        where: { userId: user.id }
-      });
-
-      await tx.creditLedger.create({
-        data: {
-          userId: user.id,
-          amount: -analysisCreditCost,
-          reason: "analysis",
-          analysisHistoryId: history.id
-        }
-      });
-
-      return {
-        history,
-        profile: nextProfile
-      };
-    });
+      historyId = saved.history.id;
+      updatedCredits = saved.profile.credits;
+    } else {
+      // 不可计费分析：不保存历史，不扣积分
+      // 只返回分析结果供页面临时展示
+    }
 
     return NextResponse.json({
       facts,
       result,
       usedAI,
-      historyId: saved.history.id,
-      credits: saved.profile.credits
+      historyId,
+      credits: updatedCredits,
+      isBillable
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "分析失败，请稍后重试。";

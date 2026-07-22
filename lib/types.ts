@@ -70,8 +70,9 @@ export type AnalyzeResponse = {
   facts: ProductFacts;
   result: ProductAnalysisResult;
   usedAI: boolean;
-  historyId?: string;
+  historyId?: string | null;
   credits?: number;
+  isBillable?: boolean;
 };
 
 export type AnalysisHistorySummary = {

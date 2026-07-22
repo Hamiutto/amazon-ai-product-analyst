@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
@@ -288,7 +289,11 @@ export default function Home() {
       if (typeof payload.credits === "number") {
         setCurrentUser((current) => (current ? { ...current, credits: payload.credits } : current));
       }
-      await loadHistory(id);
+      if (payload.isBillable === false) {
+        setHistoryNotice("本次结果需要补充信息，未保存历史，也未扣积分。");
+      } else {
+        await loadHistory(id);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "分析失败");
     } finally {
@@ -328,7 +333,7 @@ export default function Home() {
     setHistoryLoading(true);
     setHistoryNotice("");
     try {
-      const response = await fetch(`/api/history?clientId=${encodeURIComponent(id)}`, {
+      const response = await fetch(`/api/history?clientId=${encodeURIComponent(id)}&limit=5`, {
         credentials: 'include'
       });
       const payload = await response.json();
@@ -685,6 +690,10 @@ export default function Home() {
                     {historyLoading ? <Loader2 className="spin" size={15} /> : "刷新"}
                   </button>
                 </div>
+
+                <Link className="history-link" href="/history">
+                  查看全部历史
+                </Link>
 
                 {historyNotice && (
                   <p className="history-notice">

@@ -33,7 +33,7 @@ async function historyOwner(request: Request) {
   if (accessToken) {
     try {
       const user = await getUserByAccessToken(accessToken);
-      return { userId: user.id, clientId };
+      return { userId: user.id };
     } catch {
       // fall back to clientId compatibility
     }
