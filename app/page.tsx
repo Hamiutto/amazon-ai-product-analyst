@@ -229,9 +229,11 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    if (!clientId) return;
+    setHistoryItems([]);
+    setHistoryNotice("");
+    if (!currentUser || !clientId) return;
     void loadHistory(clientId);
-  }, [clientId]);
+  }, [currentUser?.id, clientId]);
 
   useEffect(() => {
     if (skipNextUrlResetRef.current) {
@@ -412,6 +414,7 @@ export default function Home() {
       setData(null);
       setError("");
       setHistoryNotice("");
+      setHistoryItems([]);
       setShowManual(false);
       setCopiedKey("");
     }
