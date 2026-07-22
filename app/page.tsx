@@ -684,12 +684,14 @@ export default function Home() {
                 <div className="history-title">
                   <div>
                     <History size={18} />
-                    <h2>最近历史</h2>
+                    <h2>最近成功分析</h2>
                   </div>
                   <button type="button" onClick={() => loadHistory()} disabled={historyLoading || !clientId}>
                     {historyLoading ? <Loader2 className="spin" size={15} /> : "刷新"}
                   </button>
                 </div>
+
+                <p className="history-caption">仅保存成功完成的分析任务</p>
 
                 <Link className="history-link" href="/history">
                   查看全部历史

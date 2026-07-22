@@ -505,6 +505,7 @@ select:focus {
 }
 
 .history-panel {
+  height: 330px;
   padding: 14px;
 }
 
@@ -513,7 +514,7 @@ select:focus {
   display: flex;
   gap: 10px;
   justify-content: space-between;
-  margin-bottom: 12px;
+  margin-bottom: 6px;
 }
 
 .history-title > div {
@@ -550,12 +551,19 @@ select:focus {
   opacity: 0.7;
 }
 
+.history-caption {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+  margin-bottom: 8px;
+}
+
 .history-link {
   color: var(--teal);
   display: inline-flex;
   font-size: 13px;
   font-weight: 800;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
   text-decoration: none;
 }
 
@@ -565,11 +573,11 @@ select:focus {
 
 .history-list {
   display: grid;
-  gap: 8px;
+  gap: 7px;
 }
 
 .history-panel .history-list {
-  max-height: 380px;
+  max-height: 210px;
   overflow-y: auto;
   padding-right: 2px;
 }
@@ -589,14 +597,14 @@ select:focus {
   border: 0;
   color: var(--ink);
   display: grid;
-  gap: 4px;
+  gap: 3px;
   min-width: 0;
-  padding: 10px;
+  padding: 8px 9px;
   text-align: left;
 }
 
 .history-item strong {
-  font-size: 13px;
+  font-size: 12px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
