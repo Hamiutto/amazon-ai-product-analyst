@@ -107,22 +107,32 @@ export async function signUpWithPassword(email: string, password: string) {
 }
 
 export async function signInWithPassword(email: string, password: string) {
-  return supabaseAuthRequest<SupabaseAuthEnvelope>("token?grant_type=password", {
+  const response = await supabaseAuthRequest<AuthSession>("token?grant_type=password", {
     method: "POST",
     body: JSON.stringify({
       email,
       password
     })
   });
+
+  return {
+    user: response.user,
+    session: response
+  };
 }
 
 export async function refreshAuthSession(refreshToken: string) {
-  return supabaseAuthRequest<SupabaseAuthEnvelope>("token?grant_type=refresh_token", {
+  const response = await supabaseAuthRequest<AuthSession>("token?grant_type=refresh_token", {
     method: "POST",
     body: JSON.stringify({
       refresh_token: refreshToken
     })
   });
+
+  return {
+    user: response.user,
+    session: response
+  };
 }
 
 export async function getUserByAccessToken(accessToken: string) {
