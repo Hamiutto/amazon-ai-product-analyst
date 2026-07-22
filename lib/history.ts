@@ -1,5 +1,6 @@
 import { getPrismaClient } from "./prisma";
 import { Prisma } from "@prisma/client";
+import { decryptJson, encryptJson } from "./encryption";
 import type { AnalyzeResponse, ProductAnalysisResult } from "./types";
 
 export type CreateAnalysisHistoryInput = AnalyzeResponse & {
@@ -27,14 +28,18 @@ function toJsonValue(value: unknown): Prisma.InputJsonValue {
   return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
 }
 
-function rehydrateResult(snapshot: unknown, script: unknown): ProductAnalysisResult {
-  return {
-    ...(snapshot as Omit<ProductAnalysisResult, "script">),
-    script: (script as ProductAnalysisResult["script"]) || {
+function rehydrateResult(snapshot: unknown, encryptedScript: unknown, plainScript: unknown): ProductAnalysisResult {
+  const script =
+    decryptJson<ProductAnalysisResult["script"]>(encryptedScript) ||
+    (plainScript as ProductAnalysisResult["script"] | null) || {
       hook: "",
       fullText: "",
       sceneSuggestion: ""
-    }
+    };
+
+  return {
+    ...(snapshot as Omit<ProductAnalysisResult, "script">),
+    script
   };
 }
 
@@ -53,7 +58,8 @@ export async function createAnalysisHistory(input: CreateAnalysisHistoryInput, p
       usedAI: input.usedAI,
       facts: toJsonValue(input.facts),
       resultSnapshot: toJsonValue(resultSnapshotWithoutScript(input.result)),
-      scriptPlainTextTemp: toJsonValue(input.result.script)
+      scriptPlainTextTemp: Prisma.JsonNull,
+      scriptEncrypted: toJsonValue(encryptJson(input.result.script))
     },
     select: {
       id: true,
@@ -110,7 +116,7 @@ export async function getAnalysisHistory(id: string, owner: HistoryOwner = {}) {
     clientId: item.clientId,
     createdAt: item.createdAt,
     facts: item.facts,
-    result: rehydrateResult(item.resultSnapshot, item.scriptPlainTextTemp),
+    result: rehydrateResult(item.resultSnapshot, item.scriptEncrypted, item.scriptPlainTextTemp),
     usedAI: item.usedAI
   };
 }
